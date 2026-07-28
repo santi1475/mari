@@ -34,7 +34,7 @@ erDiagram
 
     PACIENTES {
         int id PK
-        varchar dni UNIQUE
+        varchar dni "UNIQUE"
         varchar nombres
         varchar historia_clinica
         varchar estado_actual
