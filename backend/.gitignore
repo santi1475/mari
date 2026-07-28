@@ -24,3 +24,16 @@ vendor/
 *.njsproj
 *.sln
 *.sw?
+
+# Spreadsheets containing clinical patient data (HIPAA/GDPR precaution)
+*.xlsx
+
+# Database seeds, dumps, and backups containing sensitive clinical data
+*seed*.sql
+*seeds*.sql
+*data*.sql
+*backup*
+*dump*
+*.csv
+seeds/
+seed/
