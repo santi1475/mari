@@ -1,0 +1,1311 @@
+/* Hoja de resultados clínicos — composición.
+   La pantalla es una hoja de informe: cabecera impresa, filas regladas, barra de
+   rango de referencia por paciente. Sin tarjetas, sin barra lateral. */
+
+/* Alto fijo con paneles que hacen su propio scroll: así la barra de acciones del
+   informe queda siempre a la vista y no cae bajo el pliegue.
+   minmax(0,1fr) en la columna es obligatorio: sin él las pestañas del índice
+   estiran toda la retícula y la página se desborda a lo ancho. */
+.app {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+/* --- Cabecera impresa ------------------------------------------------------ */
+
+.membrete {
+  min-width: 0;
+  background: var(--papel);
+  border-bottom: 1px solid var(--regla);
+}
+
+.membrete-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--regla);
+}
+
+.membrete-marca {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.membrete-marca span {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--tinta-2);
+}
+
+.membrete-titulo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.875rem;
+  padding: 1rem clamp(1rem, 3vw, 2rem) 0.875rem;
+}
+
+.membrete-conteo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.enlace-salir {
+  min-height: 2.75rem;
+  padding: 0 0.25rem;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--tinta);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* La acción de crear vive junto al título, no en un rincón de una barra lateral. */
+.btn--nueva {
+  margin-left: auto;
+}
+
+/* --- Índice de la hoja: filtros como pestañas regladas ---------------------- */
+
+.indice {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+  scrollbar-width: thin;
+}
+
+.indice-tab {
+  flex: 0 0 auto;
+  padding: 0.625rem 0.75rem;
+  min-height: 2.75rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--tinta-2);
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+}
+
+.indice-tab:hover {
+  color: var(--tinta);
+  background: var(--escritorio);
+}
+
+.indice-tab[aria-pressed='true'] {
+  color: var(--tinta);
+  font-weight: 700;
+  border-bottom-color: var(--tinta);
+}
+
+.indice-tab--senal[aria-pressed='true'] {
+  color: var(--senal);
+  border-bottom-color: var(--senal);
+}
+
+/* --- Cuerpo ---------------------------------------------------------------- */
+
+.cuerpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--escritorio); /* lo que queda al lado del papel es escritorio */
+}
+
+/* La hoja se parte en dos solo cuando hay un expediente abierto. Sin paciente
+   seleccionada, el registro se queda con todo el ancho: es la lista de trabajo,
+   no la mitad sobrante de una pantalla dividida. */
+@media (min-width: 62.5rem) {
+  .app--dividido .cuerpo {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  }
+
+  /* A hoja completa, membrete y registro comparten una sola medida y el papel
+     termina en un canto visible sobre el escritorio: sin eso los filetes se cortan
+     contra blanco sin marcar y la hoja parece una tabla truncada. */
+  .app:not(.app--dividido) .membrete,
+  .app:not(.app--dividido) .panel-registro {
+    max-width: 100%;
+    border-right: 1px solid var(--regla);
+  }
+}
+
+.panel-registro {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--papel);
+  border-right: 1px solid var(--regla);
+}
+
+.buscador {
+  position: relative;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--regla);
+}
+
+.buscador input {
+  padding-left: 2.25rem;
+}
+
+.buscador svg {
+  position: absolute;
+  left: calc(clamp(1rem, 3vw, 2rem) + 0.625rem);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--tinta-2);
+  pointer-events: none;
+}
+
+/* --- El registro: filas regladas, no tarjetas ------------------------------ */
+
+.registro {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+/* Columnas del informe: paciente · último · próximo · intervalo · señal.
+   Solo se despliegan cuando caben; por debajo, la fila se apila. */
+.registro-encabezado {
+  display: none;
+}
+
+@media (min-width: 52rem) {
+  .registro-encabezado {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 5.25rem 5.25rem minmax(4rem, 6.5rem) 11rem;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 0.5rem clamp(1rem, 3vw, 2rem);
+    border-bottom: 1px solid var(--tinta);
+    background: var(--papel);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+}
+
+.fila {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.875rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--regla);
+}
+
+@media (min-width: 52rem) {
+  .fila {
+    grid-template-columns: minmax(0, 1fr) 5.25rem 5.25rem minmax(4rem, 6.5rem) 11rem;
+    align-items: center;
+    padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  }
+}
+
+.fila-persona {
+  display: block;
+  min-width: 0;
+}
+
+/* En dos columnas el panel es estrecho. Se cae la historia clínica entera, no se
+   trunca: "HC 1..." no se distingue de otro número, y el expediente abierto al lado
+   ya la muestra completa. El DNI, que es lo que identifica, se queda. */
+@media (min-width: 62.5rem) {
+  .app--dividido .fila-hc {
+    display: none;
+  }
+}
+
+.fila:hover {
+  background: var(--escritorio);
+}
+
+.fila[aria-current='true'] {
+  background: var(--escritorio);
+  box-shadow: inset 3px 0 0 var(--tinta);
+}
+
+.fila--vencida[aria-current='true'] {
+  box-shadow: inset 3px 0 0 var(--senal);
+}
+
+.fila-nombre {
+  display: block;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.fila-ident {
+  display: block;
+  margin-top: 0.125rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--tinta-2);
+  overflow-wrap: anywhere;
+}
+
+.fila-fecha {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.fila-fecha b {
+  font-weight: 400;
+  color: var(--tinta);
+}
+
+/* En pantalla estrecha las columnas se convierten en pares rotulados en línea,
+   en vez de recortarse fuera de la pantalla. */
+.fila-rotulo {
+  color: var(--tinta-2);
+}
+
+.fila-fechas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+@media (min-width: 52rem) {
+  /* El rótulo deja de verse pero se sigue anunciando: la cabecera de columna que lo
+     sustituye visualmente es decorativa para el lector de pantalla. */
+  .fila-rotulo {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  /* Las dos fechas ocupan sus propias columnas de la retícula de la fila. */
+  .fila-fechas {
+    display: contents;
+  }
+}
+
+/* --- Barra de rango de referencia ------------------------------------------
+   El intervalo programado es el rango; hoy es el valor medido. Pasado el límite,
+   la paciente está fuera de rango y la barra lo dibuja. */
+
+.rango {
+  position: relative;
+  height: 0.75rem;
+  /* En columna estrecha la barra ocuparía todo el ancho y leería como una franja
+     de color en vez de como una medida. */
+  max-width: 11rem;
+  border: 1px solid var(--regla);
+  border-radius: 2px;
+  background: var(--papel);
+  overflow: hidden;
+}
+
+@media (min-width: 52rem) {
+  .rango {
+    max-width: none;
+  }
+}
+
+.rango-relleno {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--tinta-2);
+  width: var(--avance);
+  animation: rango-entra 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rango--fuera .rango-relleno {
+  background: var(--senal);
+}
+
+/* El límite del rango: pasado este filete, el control está vencido. */
+.rango-limite {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: var(--limite);
+  width: 2px;
+  background: var(--tinta);
+}
+
+.rango--vacio {
+  border-style: dashed;
+}
+
+@keyframes rango-entra {
+  from {
+    width: 0;
+  }
+}
+
+.senal {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--tinta-2);
+}
+
+/* Filete vertical entre el valor y la columna de señal, como en el impreso. */
+@media (min-width: 52rem) {
+  .senal {
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--regla);
+  }
+}
+
+.senal--vencida {
+  color: var(--senal);
+}
+.senal--proxima {
+  color: var(--rango);
+}
+.senal--suspendido {
+  color: var(--pausa);
+}
+
+/* Marca tipográfica junto al color: en la hoja de laboratorio el valor fuera de
+   rango lleva su símbolo, no solo tinta de otro color. */
+.senal-marca {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+}
+
+/* --- Informe de la paciente ------------------------------------------------ */
+
+.panel-informe {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--papel);
+}
+
+@media (max-width: 62.4375rem) {
+  .panel-informe {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+  }
+}
+
+.informe-volver {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  min-height: 2.75rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--regla);
+  width: 100%;
+}
+
+/* En dos columnas sigue haciendo falta: sin él el registro queda encajado a media
+   hoja para el resto de la sesión, sin vuelta a la composición de aterrizaje. */
+
+.informe-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.informe-cabecera {
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--tinta);
+}
+
+.informe-ident {
+  margin-top: 0.375rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+  overflow-wrap: anywhere;
+}
+
+/* Bloque de resultado principal: la respuesta a "¿le toca?" en el sitio donde
+   la vista arranca, no al final de una lista. */
+.veredicto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.375rem 1rem;
+  margin-top: 0.875rem;
+  padding: 0.75rem 0.875rem;
+  border-left: 1px solid var(--regla);
+  background: var(--escritorio);
+  border-radius: var(--radio);
+}
+
+.veredicto--vencida {
+  background: var(--senal-papel);
+  border-left-color: var(--senal);
+}
+.veredicto--suspendido {
+  background: var(--pausa-papel);
+  border-left-color: var(--pausa);
+}
+
+.veredicto-titular {
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.veredicto--vencida .veredicto-titular {
+  color: var(--senal);
+}
+.veredicto--suspendido .veredicto-titular {
+  color: var(--pausa);
+}
+
+.veredicto-detalle {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.seccion > h3 {
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--tinta);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+}
+
+.datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.875rem 1.5rem;
+  padding-top: 0.875rem;
+}
+
+.dato-etiqueta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--tinta-2);
+}
+
+.dato-valor {
+  display: block;
+  margin-top: 0.125rem;
+  overflow-wrap: anywhere;
+}
+
+.dato-valor--cifra {
+  font-family: var(--mono);
+}
+
+/* Historial como lista de resultados: fecha a la izquierda en columna fija,
+   el hallazgo a la derecha. Lo anómalo lleva su marca. */
+.resultados {
+  list-style: none;
+  padding-top: 0.25rem;
+}
+
+.resultado {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.125rem 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--regla);
+}
+
+@media (min-width: 30rem) {
+  .resultado {
+    grid-template-columns: 5.75rem minmax(0, 1fr);
+  }
+}
+
+.resultado-fecha {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.resultado-titulo {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.resultado-valor {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.resultado-valor--fuera {
+  color: var(--senal);
+}
+
+.resultado-meta {
+  display: block; /* si no, se pega al resultado: "NIC IHDSI" */
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+  overflow-wrap: anywhere;
+}
+
+.resultado-nota {
+  margin-top: 0.375rem;
+  padding-left: 0.625rem;
+  border-left: 1px solid var(--regla);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.vacio-seccion {
+  padding: 0.875rem 0;
+  font-size: 0.875rem;
+  color: var(--tinta-2);
+}
+
+/* --- Acciones -------------------------------------------------------------- */
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.875rem clamp(1rem, 3vw, 2rem);
+  border-top: 1px solid var(--regla);
+  background: var(--papel);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4375rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--tinta);
+  background: var(--papel);
+  border: 1px solid var(--regla-fuerte);
+  border-radius: var(--radio);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--escritorio);
+}
+
+.btn:disabled {
+  color: var(--tinta-2);
+  border-color: var(--regla);
+  cursor: not-allowed;
+}
+
+.btn--principal {
+  color: var(--papel);
+  background: var(--tinta);
+  border-color: var(--tinta);
+}
+
+/* Derivado de la tinta, no negro puro: el papel no lleva más de una tinta. */
+.btn--principal:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tinta) 86%, black);
+}
+
+.btn--principal:disabled {
+  color: var(--escritorio);
+  background: var(--tinta-2);
+  border-color: var(--tinta-2);
+}
+
+.btn--pausa {
+  color: var(--pausa);
+  border-color: var(--pausa);
+}
+
+/* --- Estados de la lista --------------------------------------------------- */
+
+.estado-vacio {
+  padding: 3rem clamp(1rem, 3vw, 2rem);
+  text-align: center;
+  color: var(--tinta-2);
+}
+
+.estado-vacio h2 {
+  margin-bottom: 0.375rem;
+  color: var(--tinta);
+}
+
+/* Sin tamaño propio: hereda el cuerpo. Es el texto que explica si no hay pacientes
+   vencidas o si se cayó el servidor, y eso hay que poder leerlo. */
+.estado-vacio p {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.estado-vacio .btn {
+  margin-top: 1rem;
+}
+
+/* Un fallo de red nunca puede parecer un dato clínico. */
+.estado-fallo {
+  border-left: 1px solid var(--senal);
+  background: var(--senal-papel);
+  text-align: left;
+}
+
+.estado-fallo h2 {
+  color: var(--senal);
+}
+
+/* --- Confirmación de guardado ---------------------------------------------- */
+
+.aviso {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--papel);
+  background: var(--tinta);
+  border-radius: var(--radio);
+  box-shadow: 0 6px 16px -4px rgb(20 24 27 / 0.35);
+  animation: aviso-entra 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes aviso-entra {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.5rem);
+  }
+}
+
+/* --- Formularios ----------------------------------------------------------- */
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  margin-bottom: 1rem;
+}
+
+.campo > label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.campo-ayuda {
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.campo-par {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 1rem;
+}
+
+@media (min-width: 30rem) {
+  .campo-par {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Lo que el sistema hará al guardar, dicho antes de guardar. */
+.consecuencia {
+  padding: 0.625rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  background: var(--escritorio);
+  border-left: 1px solid var(--regla-fuerte);
+  border-radius: var(--radio);
+}
+
+.consecuencia--pausa {
+  background: var(--pausa-papel);
+  border-left-color: var(--pausa);
+}
+
+.error-form {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: var(--senal);
+  background: var(--senal-papel);
+  border-left: 1px solid var(--senal);
+  border-radius: var(--radio);
+}
+
+/* --- Diálogos -------------------------------------------------------------- */
+
+.velo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgb(20 24 27 / 0.45);
+}
+
+@media (min-width: 40rem) {
+  .velo {
+    align-items: center;
+    padding: 1.5rem;
+  }
+}
+
+.dialogo {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 34rem;
+  max-height: 92dvh;
+  background: var(--papel);
+  border-radius: var(--radio) var(--radio) 0 0;
+  box-shadow: 0 12px 32px -8px rgb(20 24 27 / 0.4);
+  animation: dialogo-entra 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 40rem) {
+  .dialogo {
+    border-radius: var(--radio);
+  }
+}
+
+@keyframes dialogo-entra {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+}
+
+.dialogo-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--tinta);
+}
+
+.dialogo-cerrar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radio);
+  color: var(--tinta-2);
+}
+
+.dialogo-cerrar:hover {
+  color: var(--tinta);
+  background: var(--escritorio);
+}
+
+/* El formulario se interpone entre .dialogo y sus hijos, así que tiene que
+   propagar la caja flexible: si no, el cuerpo no hace scroll y el pie con los
+   botones se sale del diálogo en pantalla de celular. */
+.dialogo > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dialogo-cuerpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.dialogo-pie {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--regla);
+}
+
+/* --- Ingreso --------------------------------------------------------------- */
+
+.ingreso {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.ingreso form {
+  width: 100%;
+  max-width: 23rem;
+  padding: clamp(1.5rem, 5vw, 2rem);
+  background: var(--papel);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+}
+
+.ingreso-marca {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--tinta);
+}
+
+.ingreso h1 {
+  margin-bottom: 1.25rem;
+}
+
+.ingreso .btn {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+/* Un modo sin autenticación real tiene que verse, no esconderse. */
+.aviso-simulado {
+  margin-top: 1rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--senal);
+  background: var(--senal-papel);
+  border-left: 1px solid var(--senal);
+  border-radius: var(--radio);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Segmented Controls and View Selectors --- */
+.vista-selector {
+  display: flex;
+  background: var(--escritorio);
+  padding: 2px;
+  border-radius: var(--radio);
+  margin-left: 1.5rem;
+}
+
+.btn-vista {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: var(--radio);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--tinta-2);
+}
+
+.btn-vista--activo {
+  background: var(--papel);
+  color: var(--tinta);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* --- Calendar Container --- */
+.cal-contenedor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--papel);
+}
+
+.cal-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--regla);
+  background: var(--papel);
+}
+
+.cal-titulo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: var(--tinta);
+}
+
+.cal-fecha-titulo {
+  font-size: 1rem;
+  text-transform: capitalize;
+}
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.cal-modos {
+  display: flex;
+  background: var(--escritorio);
+  padding: 2px;
+  border-radius: var(--radio);
+}
+
+.btn-modo {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radio);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--tinta-2);
+}
+
+.btn-modo--activo {
+  background: var(--papel);
+  color: var(--tinta);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.cal-cuerpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* --- Monthly Grid --- */
+.cal-mes-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(5.5rem, 1fr);
+  border-bottom: 1px solid var(--regla);
+  border-right: 1px solid var(--regla);
+}
+
+.cal-dia-semana-nombre {
+  text-align: center;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--tinta);
+  border-left: 1px solid var(--regla);
+  background: var(--papel);
+  min-height: 0;
+}
+
+.cal-dia-celda {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem;
+  border-left: 1px solid var(--regla);
+  border-top: 1px solid var(--regla);
+  background: var(--papel);
+}
+
+.cal-dia-celda--vacio {
+  background: var(--escritorio);
+  opacity: 0.3;
+}
+
+.cal-dia-celda--hoy {
+  background: var(--pausa-papel);
+}
+
+.cal-dia-numero {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  align-self: flex-end;
+  color: var(--tinta-2);
+}
+
+.cal-dia-celda--hoy .cal-dia-numero {
+  color: var(--pausa);
+  font-weight: 700;
+}
+
+.cal-dia-citas {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cal-cita-badge {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 2px 4px;
+  border-radius: 2px;
+  border: 1px solid var(--regla-fuerte);
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-cita-badge--activa {
+  background: var(--papel);
+  border-color: var(--regla-fuerte);
+  color: var(--tinta);
+}
+
+.cal-cita-badge--pausada {
+  background: var(--pausa-papel);
+  border-color: var(--pausa);
+  color: var(--pausa);
+}
+
+.cal-cita-badge--derivada {
+  background: var(--escritorio);
+  border-color: var(--regla-fuerte);
+  color: var(--tinta-2);
+}
+
+.cal-cita-badge--cerrada {
+  background: var(--escritorio);
+  border-color: var(--regla-fuerte);
+  color: var(--tinta-2);
+  text-decoration: line-through;
+}
+
+.cal-cita-badge--seleccionada {
+  outline: 2px solid var(--tinta);
+}
+
+/* --- Weekly Grid --- */
+.cal-semana-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  height: 100%;
+  border-right: 1px solid var(--regla);
+  min-height: 25rem;
+}
+
+.cal-semana-columna {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--regla);
+}
+
+.cal-semana-columna--hoy {
+  background: var(--pausa-papel);
+}
+
+.cal-semana-dia-cabecera {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--regla);
+  background: var(--papel);
+}
+
+.cal-semana-dia-numero {
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--tinta);
+}
+
+.cal-semana-citas {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  overflow-y: auto;
+}
+
+.cal-cita-tarjeta {
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem;
+  border-radius: var(--radio);
+  border: 1px solid var(--regla-fuerte);
+  text-align: left;
+  cursor: pointer;
+  background: var(--papel);
+}
+
+.cal-cita-tarjeta--activa {
+  border-left: 3px solid var(--regla-fuerte);
+}
+
+.cal-cita-tarjeta--pausada {
+  border-left: 3px solid var(--pausa);
+  background: var(--pausa-papel);
+}
+
+.cal-cita-tarjeta--derivada {
+  border-left: 3px solid var(--regla-fuerte);
+  opacity: 0.7;
+}
+
+.cal-cita-tarjeta--cerrada {
+  border-left: 3px solid var(--regla-fuerte);
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.cal-cita-tarjeta--seleccionada {
+  outline: 2px solid var(--tinta);
+}
+
+.cal-cita-paciente {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.cal-cita-estado {
+  font-size: 0.5625rem;
+  margin-top: 0.25rem;
+}
+
+.cal-semana-vacio {
+  font-size: 0.75rem;
+  color: var(--tinta-2);
+  text-align: center;
+  margin-top: 1rem;
+  font-style: italic;
+}
+
+/* --- Agenda List --- */
+.cal-agenda-lista {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--regla);
+}
+
+.cal-agenda-item {
+  display: grid;
+  grid-template-columns: 6rem 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  border-top: 1px solid var(--regla);
+  text-align: left;
+  width: 100%;
+}
+
+.cal-agenda-item:hover {
+  background: var(--escritorio);
+}
+
+.cal-agenda-item--seleccionada {
+  background: var(--pausa-papel);
+}
+
+.cal-agenda-fecha {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--tinta);
+}
+
+.cal-agenda-nombre {
+  display: block;
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.cal-agenda-meta {
+  font-size: 0.75rem;
+  color: var(--tinta-2);
+}
+
+.cal-agenda-vacio {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--tinta-2);
+}
+
+/* --- Profile Edit Form --- */
+.informe-edicion {
+  padding: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.campo-grupo {
+  display: flex;
+  gap: 1rem;
+}
+
+.campo-grupo .campo {
+  flex: 1;
+}
+
+.acciones-edicion {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.btn--chico {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  min-height: auto;
+  border: 1px solid var(--regla-fuerte);
+  border-radius: var(--radio);
+}
+
+.btn--chico:hover {
+  background: var(--escritorio);
+}
+
+.btn--danger {
+  color: var(--senal);
+  border-color: var(--senal);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--senal-papel);
+}
+

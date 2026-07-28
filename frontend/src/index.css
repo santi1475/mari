@@ -1,0 +1,148 @@
+/* Hoja de resultados clínicos — base y tokens.
+   Ver el contrato de dirección en index.html. */
+
+:root {
+  /* Papel y tinta. El fondo es claro porque se usa de día, junto a una ventana,
+     en la PC de un puesto de salud y en un celular en la calle. */
+  --papel: #ffffff;
+  --escritorio: #e8ebee;
+  --tinta: #14181b;
+  --tinta-2: #545c63;
+  --regla: #ccd3d9;       /* filete impreso, sin texto encima */
+  --regla-fuerte: #8b959d; /* borde de campo: necesita 3:1 contra el papel */
+
+  /* El color se reserva a lo que está fuera de rango. Normal no lleva color:
+     si todo se marca, nada se lee como alerta. */
+  --senal: #b42318;
+  --senal-papel: #fdf2f1;
+  --rango: #12603c;
+  --pausa: #453a96;
+  --pausa-papel: #f2f1fb;
+
+  --sans: ui-sans-serif, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* Las cifras del informe (fechas, DNI, HC, días) van en monoespaciada porque son
+     medidas que se comparan en columna, no por decorar de "técnico". */
+  --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+
+  --paso: 0.5rem;
+  --radio: 4px; /* el papel no tiene esquinas blandas */
+
+  color-scheme: light;
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--tinta);
+  background-color: var(--escritorio);
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Las cifras se alinean en columna: sin esto las fechas bailan de fila a fila. */
+.cifra,
+input[type='date'],
+input[type='text'],
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+h1 {
+  font-size: 1.375rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* Encabezado de columna de una hoja de resultados: es el único sitio donde
+   sobreviven las versalitas, y a tamaño pequeño, como en el impreso real. */
+.rotulo {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  color: var(--tinta);
+  background-color: var(--papel);
+  border: 1px solid var(--regla-fuerte);
+  border-radius: var(--radio);
+  padding: 0.5rem 0.625rem;
+  min-height: 2.75rem; /* se toca con el pulgar en visita domiciliaria */
+}
+
+textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+/* Un anillo de foco que se ve de verdad: el anterior era 15% de alfa sobre casi negro. */
+:focus-visible {
+  outline: 2px solid var(--tinta);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::placeholder {
+  color: var(--tinta-2);
+  opacity: 1;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--regla);
+  border: 3px solid var(--escritorio);
+  border-radius: var(--radio);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--regla-fuerte);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

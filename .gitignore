@@ -1,0 +1,11 @@
+analisis_flujo_pacientes.md
+DESIGN.md
+especificacion_sistema_seguimiento.md
+PRODUCT.md
+
+#DEV
+.agents/
+.claude/
+.impeccable/
+.playwright-mcp/
+skills-lock.json
