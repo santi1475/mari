@@ -5,8 +5,8 @@
 *.so
 *.dylib
 bin/
-api
-migrate
+/api
+/migrate
 
 # Environment variables
 .env
