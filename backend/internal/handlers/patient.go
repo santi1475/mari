@@ -48,7 +48,8 @@ func (h *PatientHandler) ListPatients(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT p.id, p.dni, p.nombres, p.historia_clinica, p.estado_actual, p.fecha_registro,
 		       (SELECT MAX(e.fecha_evento) FROM eventos_clinicos e WHERE e.paciente_id = p.id) AS ultimo_evento,
-		       (SELECT MAX(e.fecha_proximo_control) FROM eventos_clinicos e WHERE e.paciente_id = p.id) AS proximo_control
+		       (SELECT MAX(e.fecha_proximo_control) FROM eventos_clinicos e WHERE e.paciente_id = p.id) AS proximo_control,
+		       COALESCE((SELECT e.observaciones FROM eventos_clinicos e WHERE e.paciente_id = p.id AND e.tipo_evento = 'Molecular' ORDER BY e.fecha_evento ASC, e.id ASC LIMIT 1), '') AS cepas_vph
 		FROM pacientes p
 		WHERE p.eliminado = FALSE
 	`
@@ -97,7 +98,7 @@ func (h *PatientHandler) ListPatients(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p models.Patient
 		err := rows.Scan(&p.ID, &p.DNI, &p.Nombres, &p.HistoriaClinica, &p.EstadoActual, &p.FechaRegistro,
-			&p.UltimoEvento, &p.ProximoControl)
+			&p.UltimoEvento, &p.ProximoControl, &p.CepaVPH)
 		if err != nil {
 			SendError(w, http.StatusInternalServerError, "Error scanning patient: "+err.Error())
 			return

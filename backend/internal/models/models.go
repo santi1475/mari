@@ -18,6 +18,7 @@ type Patient struct {
 	// scheduled follow-up. Together they define the follow-up window the list renders.
 	UltimoEvento   *time.Time `json:"ultimo_evento,omitempty"`
 	ProximoControl *time.Time `json:"proximo_control,omitempty"`
+	CepaVPH        string     `json:"cepa_vph,omitempty"`
 }
 
 // Contact represents the contactos table

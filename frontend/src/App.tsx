@@ -38,6 +38,7 @@ interface Patient {
   fecha_registro: string;
   ultimo_evento?: string | null;
   proximo_control?: string | null;
+  cepa_vph?: string;
 }
 
 interface Contact {
@@ -228,10 +229,16 @@ function Fila({
   patient,
   activa,
   onAbrir,
+  seleccionado,
+  onToggleSeleccion,
+  modoExportar,
 }: {
   patient: Patient;
   activa: boolean;
   onAbrir: () => void;
+  seleccionado: boolean;
+  onToggleSeleccion: (e: React.MouseEvent | React.ChangeEvent) => void;
+  modoExportar: boolean;
 }) {
   const estado = seguimiento(patient.estado_actual, patient.proximo_control);
   const texto = textoSenal(estado);
@@ -239,7 +246,18 @@ function Fila({
     estado.clase === 'vencida' ? '▲' : estado.clase === 'suspendido' ? '❙❙' : estado.clase === 'proxima' ? '●' : '·';
 
   return (
-    <li>
+    <li className="registro-item">
+      {modoExportar && (
+        <div className="fila-check-container">
+          <input
+            type="checkbox"
+            checked={seleccionado}
+            onChange={onToggleSeleccion}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Seleccionar a ${patient.nombres}`}
+          />
+        </div>
+      )}
       <button
         type="button"
         className={`fila${estado.clase === 'vencida' ? ' fila--vencida' : ''}`}
@@ -310,6 +328,16 @@ export default function App() {
   const [aviso, setAviso] = useState('');
 
   const [vista, setVista] = useState<'lista' | 'calendario'>('lista');
+  const [filtroCepa, setFiltroCepa] = useState<string>('');
+  const [fechaInicio, setFechaInicio] = useState<string>('');
+  const [fechaFin, setFechaFin] = useState<string>('');
+  const [tipoFecha, setTipoFecha] = useState<'proximo_control' | 'ultimo_evento' | 'fecha_registro'>('proximo_control');
+  const [filtrosAvanzadosAbiertos, setFiltrosAvanzadosAbiertos] = useState<boolean>(false);
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
+  const [modoExportar, setModoExportar] = useState<boolean>(false);
+  const [mostrarConfirmarSalir, setMostrarConfirmarSalir] = useState<boolean>(false);
+  const [pagina, setPagina] = useState<number>(1);
+  const [itemsPorPagina, setItemsPorPagina] = useState<number>(10);
   const [editando, setEditando] = useState(false);
   const [editDni, setEditDni] = useState('');
   const [editNombres, setEditNombres] = useState('');
@@ -410,6 +438,125 @@ export default function App() {
       ctrl.abort();
     };
   }, [busqueda, filtro, token, cabeceras, pulso]);
+
+  // Helper to extract VPH strain from observations or raw strain string
+  const getVPHStrain = useCallback((cepa: string | null | undefined): string => {
+    if (!cepa) return 'VPH Positivo';
+    const m = /Cepa\(s\):\s*([^.]+)/i.exec(cepa);
+    if (m && m[1]) return m[1].trim();
+    // Fallback checks
+    const strains: string[] = [];
+    const upper = cepa.toUpperCase();
+    if (upper.includes('16')) strains.push('VPH 16');
+    if (upper.includes('18')) strains.push('VPH 18');
+    if (upper.includes('OTROS') || upper.includes('A/R')) strains.push('VPH Otros A/R');
+    return strains.length > 0 ? strains.join(', ') : 'VPH Positivo';
+  }, []);
+
+  // ponytail: client-side CSV/Excel export
+  // Ceiling: browser memory limit for large data Blobs and formatting constraints in standard CSV.
+  // Upgrade path: implement server-side Excel generation (e.g. using Excelize in Go) with direct file streaming.
+  const exportarExcel = useCallback((pacientesAExportar: Patient[]) => {
+    const cabeceras = ['Nombres', 'DNI', 'Historia Clínica', 'Estado Actual', 'Cepa VPH', 'Último Evento', 'Próximo Control', 'Fecha de Registro'];
+    const filas = pacientesAExportar.map(p => [
+      p.nombres,
+      p.dni,
+      p.historia_clinica || '',
+      p.estado_actual,
+      getVPHStrain(p.cepa_vph),
+      fecha(p.ultimo_evento),
+      fecha(p.proximo_control),
+      fecha(p.fecha_registro)
+    ]);
+
+    // UTF-16LE format works best with tab delimiters and CRLF line endings
+    const csvContent = [
+      cabeceras.map(c => `"${c.replace(/"/g, '""')}"`).join('\t'),
+      ...filas.map(f => f.map(val => `"${val.replace(/"/g, '""')}"`).join('\t'))
+    ].join('\r\n');
+
+    // Convert string to UTF-16LE byte buffer
+    const buffer = new ArrayBuffer(csvContent.length * 2 + 2); // 2 bytes per char + 2 bytes for BOM
+    const view = new DataView(buffer);
+    
+    // Write UTF-16LE BOM (0xFEFF -> 0xFF 0xFE in binary)
+    view.setUint16(0, 0xFEFF, true);
+    
+    // Write characters as 16-bit little-endian values
+    for (let i = 0; i < csvContent.length; i++) {
+      view.setUint16((i + 1) * 2, csvContent.charCodeAt(i), true);
+    }
+
+    const blob = new Blob([buffer], { type: 'text/csv;charset=utf-16le;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Pacientes_VPH_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }, [getVPHStrain]);
+
+  // ponytail: client-side-only filtering and pagination
+  // Ceiling: performance drops when patient database exceeds 5,000+ records.
+  // Upgrade path: migrate filters/pagination to backend sql parameters and standard offset/limit pagination.
+  const filteredPatients = React.useMemo(() => {
+    return patients.filter((p) => {
+      // 1. Filter by VPH strain (Cepa)
+      if (filtroCepa) {
+        const obs = (p.cepa_vph || '').toUpperCase();
+        if (filtroCepa === 'VPH 16' && !obs.includes('16')) return false;
+        if (filtroCepa === 'VPH 18' && !obs.includes('18')) return false;
+        if (filtroCepa === 'VPH Otros A/R' && !(obs.includes('OTROS') || obs.includes('A/R'))) return false;
+      }
+
+      // 2. Filter by Date range
+      let dateStr: string | null | undefined = null;
+      if (tipoFecha === 'ultimo_evento') dateStr = p.ultimo_evento;
+      else if (tipoFecha === 'proximo_control') dateStr = p.proximo_control;
+      else dateStr = p.fecha_registro;
+
+      if (fechaInicio || fechaFin) {
+        if (!dateStr) return false;
+        const datePart = dateStr.split('T')[0];
+        if (fechaInicio && datePart < fechaInicio) return false;
+        if (fechaFin && datePart > fechaFin) return false;
+      }
+
+      return true;
+    });
+  }, [patients, filtroCepa, tipoFecha, fechaInicio, fechaFin]);
+
+  // Reset page when any filter state changes
+  useEffect(() => {
+    setPagina(1);
+  }, [filtro, busqueda, filtroCepa, fechaInicio, fechaFin, tipoFecha]);
+
+  // Clear selection if current filtered list changes or empty, to avoid hidden selection memory issues
+  useEffect(() => {
+    const validIds = new Set(filteredPatients.map(p => p.id));
+    setSeleccionados(prev => {
+      const next = new Set<number>();
+      prev.forEach(id => {
+        if (validIds.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredPatients]);
+
+  // Reset export mode and selection when switching between List and Calendar views
+  useEffect(() => {
+    setModoExportar(false);
+    setSeleccionados(new Set());
+  }, [vista]);
+
+  // Pagination calculations
+  const totalItems = filteredPatients.length;
+  const totalPaginas = Math.ceil(totalItems / itemsPorPagina) || 1;
+  const paginaValida = Math.min(Math.max(pagina, 1), totalPaginas);
+  const startIndex = (paginaValida - 1) * itemsPorPagina;
+  const paginatedPatients = filteredPatients.slice(startIndex, startIndex + itemsPorPagina);
 
   const cargarDetalle = useCallback(
     async (id: number) => {
@@ -678,7 +825,7 @@ export default function App() {
           <span className="membrete-conteo">
             {hoy}
             {simulado && ' · sesión sin autenticar'}
-            <button type="button" className="enlace-salir" onClick={cerrarSesion}>
+            <button type="button" className="enlace-salir" onClick={() => setMostrarConfirmarSalir(true)}>
               Salir
             </button>
           </span>
@@ -753,26 +900,163 @@ export default function App() {
           ) : (
             <>
               <div className="buscador">
-                <Search size={18} aria-hidden="true" />
-                <label className="sr-only" htmlFor="buscar">
-                  Buscar paciente por nombre, DNI o historia clínica
-                </label>
-                <input
-                  id="buscar"
-                  type="search"
-                  placeholder="Buscar por nombre, DNI o historia clínica"
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                />
+                <div className="buscador-principal">
+                  <div className="buscador-input-wrapper">
+                    <Search size={18} aria-hidden="true" />
+                    <label className="sr-only" htmlFor="buscar">
+                      Buscar paciente por nombre, DNI o historia clínica
+                    </label>
+                    <input
+                      id="buscar"
+                      type="search"
+                      placeholder="Buscar por nombre, DNI o historia clínica"
+                      value={busqueda}
+                      onChange={(e) => setBusqueda(e.target.value)}
+                      disabled={modoExportar}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className={`btn btn--secundario btn--filtros-maestros ${filtrosAvanzadosAbiertos ? 'btn--activo' : ''}`}
+                    onClick={() => setFiltrosAvanzadosAbiertos(!filtrosAvanzadosAbiertos)}
+                    title="Filtros maestros"
+                    disabled={modoExportar}
+                  >
+                    Filtros
+                  </button>
+                  {!modoExportar ? (
+                    <button
+                      type="button"
+                      className="btn btn--exportar"
+                      onClick={() => setModoExportar(true)}
+                      title="Activar modo exportación"
+                    >
+                      Exportar
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn--exportar"
+                        onClick={() => {
+                          const seleccionadosList = patients.filter(p => seleccionados.has(p.id));
+                          exportarExcel(seleccionadosList);
+                        }}
+                        disabled={seleccionados.size === 0}
+                        title="Exportar seleccionadas"
+                      >
+                        Exportar ({seleccionados.size})
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--exportar btn--secundario"
+                        onClick={() => exportarExcel(filteredPatients)}
+                        title="Exportar todas las que coinciden con los filtros"
+                      >
+                        Exportar todas
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--cancelar"
+                        onClick={() => {
+                          setModoExportar(false);
+                          setSeleccionados(new Set());
+                        }}
+                        title="Salir del modo exportación"
+                      >
+                        Cancelar
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {filtrosAvanzadosAbiertos && (
+                  <div className="filtros-avanzados">
+                    <div className="campo">
+                      <label htmlFor="filtro-cepa">Cepa VPH</label>
+                      <select
+                        id="filtro-cepa"
+                        value={filtroCepa}
+                        onChange={(e) => setFiltroCepa(e.target.value)}
+                      >
+                        <option value="">Todas las cepas</option>
+                        <option value="VPH 16">VPH 16</option>
+                        <option value="VPH 18">VPH 18</option>
+                        <option value="VPH Otros A/R">VPH Otros A/R</option>
+                      </select>
+                    </div>
+
+                    <div className="campo">
+                      <label htmlFor="filtro-tipo-fecha">Filtrar fecha por</label>
+                      <select
+                        id="filtro-tipo-fecha"
+                        value={tipoFecha}
+                        onChange={(e) => setTipoFecha(e.target.value as any)}
+                      >
+                        <option value="proximo_control">Próximo control</option>
+                        <option value="ultimo_evento">Último evento</option>
+                        <option value="fecha_registro">Fecha de registro</option>
+                      </select>
+                    </div>
+
+                    <div className="campo">
+                      <label htmlFor="filtro-fecha-inicio">Desde</label>
+                      <input
+                        id="filtro-fecha-inicio"
+                        type="date"
+                        value={fechaInicio}
+                        onChange={(e) => setFechaInicio(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="campo">
+                      <label htmlFor="filtro-fecha-fin">Hasta</label>
+                      <input
+                        id="filtro-fecha-fin"
+                        type="date"
+                        value={fechaFin}
+                        onChange={(e) => setFechaFin(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="registro-encabezado" aria-hidden="true">
-                <span className="rotulo">Paciente</span>
-                <span className="rotulo">Último</span>
-                <span className="rotulo">Próximo</span>
-                <span className="rotulo">Intervalo</span>
-                <span className="rotulo">Señal</span>
-              </div>
+              {modoExportar ? (
+                <div className="registro-encabezado-wrapper">
+                  <div className="fila-check-container header-check-container" aria-hidden="true">
+                    <input
+                      type="checkbox"
+                      checked={paginatedPatients.length > 0 && paginatedPatients.every(p => seleccionados.has(p.id))}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        const nuevos = new Set(seleccionados);
+                        paginatedPatients.forEach(p => {
+                          if (checked) nuevos.add(p.id);
+                          else nuevos.delete(p.id);
+                        });
+                        setSeleccionados(nuevos);
+                      }}
+                      aria-label="Seleccionar todos los pacientes de esta página"
+                    />
+                  </div>
+                  <div className="registro-encabezado" aria-hidden="true">
+                    <span className="rotulo">Paciente</span>
+                    <span className="rotulo">Último</span>
+                    <span className="rotulo">Próximo</span>
+                    <span className="rotulo">Intervalo</span>
+                    <span className="rotulo">Señal</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="registro-encabezado" aria-hidden="true" style={{ position: 'sticky', top: 0, zIndex: 1, borderBottom: '1px solid var(--tinta)' }}>
+                  <span className="rotulo">Paciente</span>
+                  <span className="rotulo">Último</span>
+                  <span className="rotulo">Próximo</span>
+                  <span className="rotulo">Intervalo</span>
+                  <span className="rotulo">Señal</span>
+                </div>
+              )}
 
               {falloLista ? (
                 <div className="estado-vacio estado-fallo" role="alert">
@@ -785,34 +1069,83 @@ export default function App() {
                 </div>
               ) : cargandoLista ? (
                 <p className="estado-vacio">Consultando el registro…</p>
-              ) : patients.length === 0 ? (
+              ) : filteredPatients.length === 0 ? (
                 <div className="estado-vacio">
                   <h2>
                     {filtro === 'vencidas'
                       ? 'Ninguna paciente vencida'
-                      : busqueda
+                      : (busqueda || filtroCepa || fechaInicio || fechaFin)
                         ? 'Sin coincidencias'
                         : 'Sin pacientes en este filtro'}
                   </h2>
                   <p>
                     {filtro === 'vencidas'
                       ? 'Todas las pacientes en seguimiento están dentro de su plazo de control.'
-                      : busqueda
-                        ? `Ninguna paciente coincide con «${busqueda}».`
+                      : (busqueda || filtroCepa || fechaInicio || fechaFin)
+                        ? 'Ninguna paciente coincide con los filtros aplicados.'
                         : 'El registro respondió correctamente: no hay pacientes en este estado.'}
                   </p>
                 </div>
               ) : (
-                <ol className="registro">
-                  {patients.map((p) => (
-                    <Fila
-                      key={p.id}
-                      patient={p}
-                      activa={seleccionada === p.id}
-                      onAbrir={() => setSeleccionada(p.id)}
-                    />
-                  ))}
-                </ol>
+                <>
+                  <ol className="registro">
+                    {paginatedPatients.map((p) => (
+                      <Fila
+                        key={p.id}
+                        patient={p}
+                        activa={seleccionada === p.id}
+                        onAbrir={() => setSeleccionada(p.id)}
+                        seleccionado={seleccionados.has(p.id)}
+                        onToggleSeleccion={() => {
+                          const nuevos = new Set(seleccionados);
+                          if (nuevos.has(p.id)) nuevos.delete(p.id);
+                          else nuevos.add(p.id);
+                          setSeleccionados(nuevos);
+                        }}
+                        modoExportar={modoExportar}
+                      />
+                    ))}
+                  </ol>
+                  <div className="paginacion">
+                    <div className="paginacion-info">
+                      <span>
+                        {startIndex + 1} - {Math.min(startIndex + itemsPorPagina, totalItems)} de {totalItems}
+                      </span>
+                      <select
+                        className="select-limite"
+                        value={itemsPorPagina}
+                        onChange={(e) => setItemsPorPagina(Number(e.target.value))}
+                        aria-label="Filas por página"
+                      >
+                        <option value={10}>10 filas</option>
+                        <option value={25}>25 filas</option>
+                        <option value={50}>50 filas</option>
+                        <option value={100}>100 filas</option>
+                      </select>
+                    </div>
+                    <div className="paginacion-botones">
+                      <button
+                        type="button"
+                        className="btn btn--chico"
+                        disabled={paginaValida === 1}
+                        onClick={() => setPagina(paginaValida - 1)}
+                      >
+                        Anterior
+                      </button>
+                      <span className="paginacion-actual">
+                        Pág. {paginaValida} de {totalPaginas}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--chico"
+                        disabled={paginaValida === totalPaginas}
+                        onClick={() => setPagina(paginaValida + 1)}
+                      >
+                        Siguiente
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </>
           )}
@@ -1570,6 +1903,37 @@ export default function App() {
               </button>
             </div>
           </form>
+        </Dialogo>
+      )}
+
+      {/* --- Cierre de Sesión --- */}
+      {mostrarConfirmarSalir && (
+        <Dialogo titulo="Confirmar cierre de sesión" onCerrar={() => setMostrarConfirmarSalir(false)}>
+          <div className="dialogo-cuerpo">
+            <p>¿Está segura de que desea cerrar la sesión en el Gestor Mari?</p>
+            <p className="informe-ident" style={{ marginTop: '0.5rem' }}>
+              Deberá volver a ingresar sus credenciales para acceder al registro de pacientes.
+            </p>
+          </div>
+          <div className="dialogo-pie">
+            <button
+              type="button"
+              className="btn btn--danger"
+              onClick={() => {
+                setMostrarConfirmarSalir(false);
+                cerrarSesion();
+              }}
+            >
+              Cerrar sesión
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setMostrarConfirmarSalir(false)}
+            >
+              Cancelar
+            </button>
+          </div>
         </Dialogo>
       )}
     </div>

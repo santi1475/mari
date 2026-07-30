@@ -1,11 +1,3 @@
-/* Hoja de resultados clínicos — composición.
-   La pantalla es una hoja de informe: cabecera impresa, filas regladas, barra de
-   rango de referencia por paciente. Sin tarjetas, sin barra lateral. */
-
-/* Alto fijo con paneles que hacen su propio scroll: así la barra de acciones del
-   informe queda siempre a la vista y no cae bajo el pliegue.
-   minmax(0,1fr) en la columna es obligatorio: sin él las pestañas del índice
-   estiran toda la retícula y la página se desborda a lo ancho. */
 .app {
   height: 100dvh;
   display: grid;
@@ -165,9 +157,9 @@
   padding-left: 2.25rem;
 }
 
-.buscador svg {
+.buscador-input-wrapper svg {
   position: absolute;
-  left: calc(clamp(1rem, 3vw, 2rem) + 0.625rem);
+  left: 0.75rem;
   top: 50%;
   transform: translateY(-50%);
   color: var(--tinta-2);
@@ -1307,5 +1299,214 @@
 
 .btn--danger:hover:not(:disabled) {
   background: var(--senal-papel);
+}
+
+/* --- Registro item con checkbox --- */
+.registro-item {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--regla);
+  background: var(--papel);
+}
+
+.registro-item:hover {
+  background: var(--escritorio);
+}
+
+.registro-item .fila {
+  border-bottom: none;
+  flex: 1;
+}
+
+.fila-check-container {
+  padding-left: clamp(1rem, 3vw, 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fila-check-container input[type="checkbox"] {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  min-height: auto;
+  accent-color: var(--tinta);
+  border: 1px solid var(--regla-fuerte);
+  border-radius: 2px;
+}
+
+/* --- Wrapper para encabezado de registro con checkbox --- */
+.registro-encabezado-wrapper {
+  display: none;
+}
+
+@media (min-width: 52rem) {
+  .registro-encabezado-wrapper {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--tinta);
+    background: var(--papel);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  
+  .registro-encabezado-wrapper .registro-encabezado {
+    border-bottom: none;
+    flex: 1;
+    position: static;
+  }
+}
+
+.header-check-container {
+  padding-bottom: 0.5rem;
+}
+
+/* --- Buscador con filtros avanzados --- */
+.buscador-principal {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.buscador-input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.buscador-input-wrapper input {
+  padding-left: 2.25rem;
+}
+
+.btn--secundario {
+  background: var(--papel);
+  border: 1px solid var(--regla-fuerte);
+  color: var(--tinta-2);
+}
+
+.btn--secundario:hover {
+  background: var(--escritorio);
+  color: var(--tinta);
+}
+
+.btn--activo,
+.btn--secundario.btn--activo {
+  background: var(--tinta);
+  color: var(--papel);
+  border-color: var(--tinta);
+}
+
+.btn--activo:hover:not(:disabled),
+.btn--secundario.btn--activo:hover:not(:disabled) {
+  background: var(--tinta);
+  color: var(--papel);
+  border-color: var(--tinta);
+  opacity: 0.9;
+}
+
+.btn--exportar {
+  background: var(--papel);
+  border: 1px solid var(--rango);
+  color: var(--rango);
+  font-weight: 600;
+}
+
+.btn--exportar:hover:not(:disabled) {
+  background: var(--rango);
+  color: var(--papel);
+}
+
+.btn--exportar.btn--secundario {
+  border-color: var(--tinta);
+  color: var(--tinta);
+}
+
+.btn--exportar.btn--secundario:hover:not(:disabled) {
+  background: var(--escritorio);
+  color: var(--tinta);
+}
+
+.btn--cancelar {
+  background: var(--papel);
+  border: 1px solid var(--senal);
+  color: var(--senal);
+  font-weight: 600;
+}
+
+.btn--cancelar:hover:not(:disabled) {
+  background: var(--senal);
+  color: var(--papel);
+}
+
+.filtros-avanzados {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--regla);
+}
+
+.filtros-avanzados .campo {
+  margin-bottom: 0;
+}
+
+.filtros-avanzados label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tinta-2);
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.filtros-avanzados input,
+.filtros-avanzados select {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* --- Paginación --- */
+.paginacion {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  border-top: 1px solid var(--regla);
+  background: var(--papel);
+  margin-top: auto;
+}
+
+.paginacion-info {
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--tinta-2);
+}
+
+.select-limite {
+  width: auto;
+  min-height: auto;
+  height: 1.75rem;
+  padding: 0 0.25rem;
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  border-color: var(--regla);
+  border-radius: var(--radio);
+  background: var(--papel);
+}
+
+.paginacion-botones {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.paginacion-actual {
+  font-size: 0.8125rem;
+  font-weight: 550;
+  color: var(--tinta-2);
 }
 
