@@ -1495,7 +1495,7 @@ export default function App() {
                           <ol className="resultados">
                             {detalle.tratamientos.map((tr) => (
                               <li key={tr.id} className="resultado">
-                                <span className="resultado-fecha">{fecha(tr.fecha_treatment || tr.fecha_tratamiento)}</span>
+                                <span className="resultado-fecha">{fecha(tr.fecha_tratamiento)}</span>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', width: '100%' }}>
                                   <div>
                                     <span className="resultado-titulo">{tr.tipo_tratamiento}</span>
