@@ -1,8 +1,3 @@
-// Comprobación de las reglas de seguimiento. Ejecutar: node src/clinical.selfcheck.ts
-//
-// Sin framework a propósito. Si esto pasa, la lista de vencidas cuenta bien los días
-// y no vuelve a aparecer "Invalid Date" en un expediente.
-
 import assert from 'node:assert/strict';
 import {
   aDia,

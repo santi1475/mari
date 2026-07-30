@@ -66,7 +66,6 @@ func (h *PatientHandler) ListPatients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// "vencidas" and "proximas" are follow-up windows, not values of estado_actual:
-	// only a patient whose tracking is running can be overdue for a control.
 	switch estado {
 	case "":
 		// no filter
@@ -84,7 +83,6 @@ func (h *PatientHandler) ListPatients(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Urgency first: the list answers "who do I call today", so the soonest due date
-	// leads and patients with no scheduled control fall to the end.
 	query += " ORDER BY proximo_control ASC NULLS LAST, p.nombres ASC"
 
 	rows, err := h.Pool.Query(ctx, query, args...)

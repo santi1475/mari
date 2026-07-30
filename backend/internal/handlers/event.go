@@ -121,9 +121,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 			future := parsedDate.AddDate(0, 6, 0)
 			nextControlDate = &future
 		} else if strings.Contains(resUpper, "GESTANDO") || strings.Contains(resUpper, "EMBARAZADA") {
-			// Rule: Pregnancy pauses flow, changes status to Pausada and registers active gestacion.
-			// The FPP is what makes the pause reversible, so it is required here rather
-			// than optional: reactivation is FPP + 42 days (end of puerperio).
+
 			fpp, ok := parseFecha(req.FechaProbableParto)
 			if !ok {
 				SendError(w, http.StatusBadRequest, "Se requiere la fecha probable de parto (FPP) para pausar el seguimiento por gestación")

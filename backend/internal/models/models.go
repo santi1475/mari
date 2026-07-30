@@ -9,13 +9,10 @@ type Patient struct {
 	ID             int       `json:"id"`
 	DNI            string    `json:"dni"`
 	Nombres        string    `json:"nombres"`
-	HistoriaClinica *string   `json:"historia_clinica"` // Nullable
-	EstadoActual   string    `json:"estado_actual"`   // Activa, Pausada, Derivada, Cerrada
+	HistoriaClinica *string   `json:"historia_clinica"` 
+	EstadoActual   string    `json:"estado_actual"`   
 	FechaRegistro  time.Time `json:"fecha_registro"`
 
-	// Derived in ListPatients only; nil on the detail endpoint.
-	// UltimoEvento is the most recent recorded event, ProximoControl the latest
-	// scheduled follow-up. Together they define the follow-up window the list renders.
 	UltimoEvento   *time.Time `json:"ultimo_evento,omitempty"`
 	ProximoControl *time.Time `json:"proximo_control,omitempty"`
 	CepaVPH        string     `json:"cepa_vph,omitempty"`
@@ -44,7 +41,7 @@ type Pregnancy struct {
 type ClinicalEvent struct {
 	ID                 int        `json:"id"`
 	PacienteID         int        `json:"paciente_id"`
-	TipoEvento         string     `json:"tipo_evento"` // Molecular, Colposcopia, Control, Biopsia, Referencia
+	TipoEvento         string     `json:"tipo_evento"` 
 	FechaEvento        *time.Time `json:"fecha_evento"`
 	Resultado          *string    `json:"resultado"`
 	Establecimiento    *string    `json:"establecimiento"`
@@ -56,7 +53,7 @@ type ClinicalEvent struct {
 type Treatment struct {
 	ID                   int        `json:"id"`
 	PacienteID           int        `json:"paciente_id"`
-	TipoTratamiento      string     `json:"tipo_tratamiento"` // Crioterapia, Termocoagulación, Conización, Histerectomía
+	TipoTratamiento      string     `json:"tipo_tratamiento"` 
 	FechaTratamiento     *time.Time `json:"fecha_tratamiento"`
 	GinecologoResponsable *string    `json:"ginecologo_responsable"`
 	Observaciones        *string    `json:"observaciones"`

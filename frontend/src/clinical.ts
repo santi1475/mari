@@ -1,9 +1,3 @@
-// Reglas de seguimiento clínico VPH, aisladas de la UI.
-//
-// Todo lo que la lista de pacientes ordena, filtra y marca sale de aquí, así que
-// vive en un solo sitio con su comprobación al lado (clinical.selfcheck.ts).
-
-/** Estado de seguimiento derivado de la ventana entre el último evento y el próximo control. */
 export type Seguimiento =
   | { clase: 'vencida'; dias: number }
   | { clase: 'proxima'; dias: number }
@@ -13,14 +7,6 @@ export type Seguimiento =
   | { clase: 'sin-programar' };
 
 const MS_DIA = 86_400_000;
-
-/**
- * Convierte una fecha del backend (RFC3339 o YYYY-MM-DD) a un día UTC.
- *
- * Rechaza lo que no reconoce en vez de delegar en `new Date(...)`: `new Date("14/02/2024")`
- * produce un Invalid Date que `toLocaleDateString` imprime como el texto "Invalid Date"
- * sin lanzar, y eso terminaba renderizado dentro del expediente.
- */
 export function aDia(iso: string | null | undefined): Date | null {
   if (!iso) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
@@ -68,13 +54,6 @@ export function seguimiento(
   return { clase: 'programada', dias };
 }
 
-/**
- * Posición de hoy dentro de la ventana de control, como fracción del intervalo programado.
- *
- * 0 = el día del último evento, 1 = el día del control. Por encima de 1 la paciente está
- * vencida y la barra de rango se sale de su rango de referencia, que es justo la señal.
- * Devuelve null si no hay ventana que medir.
- */
 export function avanceVentana(
   ultimoEvento: string | null | undefined,
   proximoControl: string | null | undefined,
@@ -109,9 +88,6 @@ export function textoSenal(s: Seguimiento): string {
 }
 
 // --- Vocabulario clínico -----------------------------------------------------
-// Los valores deben coincidir con lo que la máquina de estados del backend reconoce
-// (internal/handlers/event.go): NORMAL y NEGATIVO reprograman a 12 meses, POSITIVO y
-// NIC a 6, GESTANDO pausa el seguimiento, CÁNCER deriva al IREN.
 
 export const TIPOS_EVENTO = [
   { valor: 'Colposcopia', etiqueta: 'Colposcopía' },
