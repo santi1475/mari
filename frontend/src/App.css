@@ -947,6 +947,8 @@
   flex-direction: column;
   height: 100%;
   background: var(--papel);
+  flex: 1;
+  min-height: 0;
 }
 
 .cal-header {

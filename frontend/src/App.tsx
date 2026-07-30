@@ -10,6 +10,7 @@ import {
   Plus,
   RotateCw,
   Search,
+  Trash,
   X,
 } from 'lucide-react';
 import {
@@ -329,9 +330,11 @@ export default function App() {
 
   const [vista, setVista] = useState<'lista' | 'calendario'>('lista');
   const [filtroCepa, setFiltroCepa] = useState<string>('');
-  const [fechaInicio, setFechaInicio] = useState<string>('');
-  const [fechaFin, setFechaFin] = useState<string>('');
-  const [tipoFecha, setTipoFecha] = useState<'proximo_control' | 'ultimo_evento' | 'fecha_registro'>('proximo_control');
+  const [filtroAnio, setFiltroAnio] = useState<string>('');
+  const [tipoFecha, setTipoFecha] = useState<'proximo_control' | 'ultimo_evento' | 'fecha_registro'>('fecha_registro');
+  const [itemsCalendario, setItemsCalendario] = useState<any[]>([]);
+  const [editandoEvento, setEditandoEvento] = useState<ClinicalEvent | null>(null);
+  const [editandoTratamiento, setEditandoTratamiento] = useState<Treatment | null>(null);
   const [filtrosAvanzadosAbiertos, setFiltrosAvanzadosAbiertos] = useState<boolean>(false);
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
   const [modoExportar, setModoExportar] = useState<boolean>(false);
@@ -367,6 +370,7 @@ export default function App() {
     resultado: 'NORMAL',
     establecimiento: 'HDSI',
     fecha_probable_parto: '',
+    fecha_proximo_control: '',
     observaciones: '',
   });
   const [nuevoTratamiento, setNuevoTratamiento] = useState({
@@ -419,7 +423,8 @@ export default function App() {
           signal: ctrl.signal,
         });
         if (!res.ok) throw new Error(await leerError(res));
-        setPatients((await res.json()) || []);
+        const data = (await res.json()) || [];
+        setPatients(data);
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
         setPatients([]);
@@ -438,6 +443,30 @@ export default function App() {
       ctrl.abort();
     };
   }, [busqueda, filtro, token, cabeceras, pulso]);
+
+  // Fetch calendar events/treatments whenever the data updates or session changes
+  useEffect(() => {
+    if (!session) return;
+    let activo = true;
+    async function cargarCalendario() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/eventos/calendario`, {
+          headers: cabeceras(),
+        });
+        if (!res.ok) throw new Error(await leerError(res));
+        const data = await res.json();
+        if (activo) {
+          setItemsCalendario(data || []);
+        }
+      } catch (e) {
+        console.error("Error loading calendar events:", e);
+      }
+    }
+    cargarCalendario();
+    return () => {
+      activo = false;
+    };
+  }, [session, pulso, cabeceras]);
 
   // Helper to extract VPH strain from observations or raw strain string
   const getVPHStrain = useCallback((cepa: string | null | undefined): string => {
@@ -498,6 +527,30 @@ export default function App() {
     document.body.removeChild(link);
   }, [getVPHStrain]);
 
+  // Dynamic list of years present in patients across all dates, with robust fallbacks
+  const aniosDisponibles = React.useMemo(() => {
+    const years = new Set<string>();
+    patients.forEach(p => {
+      if (p.fecha_registro && p.fecha_registro.length >= 4) {
+        years.add(p.fecha_registro.substring(0, 4));
+      }
+      if (p.ultimo_evento && p.ultimo_evento.length >= 4) {
+        years.add(p.ultimo_evento.substring(0, 4));
+      }
+      if (p.proximo_control && p.proximo_control.length >= 4) {
+        years.add(p.proximo_control.substring(0, 4));
+      }
+    });
+    // Ensure all years from 2023 to at least 2028 are always present by default,
+    // and dynamically support up to currentYear + 3 for future safety.
+    const currentYear = new Date().getFullYear();
+    const maxYear = Math.max(currentYear + 3, 2028);
+    for (let y = 2023; y <= maxYear; y++) {
+      years.add(String(y));
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [patients]);
+
   // ponytail: client-side-only filtering and pagination
   // Ceiling: performance drops when patient database exceeds 5,000+ records.
   // Upgrade path: migrate filters/pagination to backend sql parameters and standard offset/limit pagination.
@@ -511,27 +564,30 @@ export default function App() {
         if (filtroCepa === 'VPH Otros A/R' && !(obs.includes('OTROS') || obs.includes('A/R'))) return false;
       }
 
-      // 2. Filter by Date range
+      // 2. Filter by Year
       let dateStr: string | null | undefined = null;
       if (tipoFecha === 'ultimo_evento') dateStr = p.ultimo_evento;
       else if (tipoFecha === 'proximo_control') dateStr = p.proximo_control;
       else dateStr = p.fecha_registro;
 
-      if (fechaInicio || fechaFin) {
+      if (filtroAnio) {
         if (!dateStr) return false;
-        const datePart = dateStr.split('T')[0];
-        if (fechaInicio && datePart < fechaInicio) return false;
-        if (fechaFin && datePart > fechaFin) return false;
+        if (dateStr.substring(0, 4) !== filtroAnio) return false;
       }
 
       return true;
     });
-  }, [patients, filtroCepa, tipoFecha, fechaInicio, fechaFin]);
+  }, [patients, filtroCepa, tipoFecha, filtroAnio]);
+
+  const filteredCalendarItems = React.useMemo(() => {
+    const patientIds = new Set(filteredPatients.map(p => p.id));
+    return itemsCalendario.filter(item => patientIds.has(item.paciente_id));
+  }, [itemsCalendario, filteredPatients]);
 
   // Reset page when any filter state changes
   useEffect(() => {
     setPagina(1);
-  }, [filtro, busqueda, filtroCepa, fechaInicio, fechaFin, tipoFecha]);
+  }, [filtro, busqueda, filtroCepa, filtroAnio, tipoFecha]);
 
   // Clear selection if current filtered list changes or empty, to avoid hidden selection memory issues
   useEffect(() => {
@@ -614,11 +670,15 @@ export default function App() {
     if (seleccionada !== null) cargarDetalle(seleccionada);
   }, [seleccionada, cargarDetalle]);
 
-  async function enviar(url: string, cuerpo: unknown, exito: string) {
+  async function enviar(url: string, cuerpo: unknown, exito: string, metodo: string = 'POST') {
     setGuardando(true);
     setErrorForm('');
     try {
-      const res = await fetch(url, { method: 'POST', headers: cabeceras(), body: JSON.stringify(cuerpo) });
+      const res = await fetch(url, {
+        method: metodo,
+        headers: cabeceras(),
+        body: cuerpo !== null && cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
+      });
       if (!res.ok) throw new Error(await leerError(res));
       setDialogo(null);
       setAviso(exito);
@@ -635,6 +695,33 @@ export default function App() {
       setGuardando(false);
     }
   }
+
+  const iniciarEdicionEvento = (ev: ClinicalEvent) => {
+    setEditandoEvento(ev);
+    setNuevoEvento({
+      tipo_evento: ev.tipo_evento || 'Colposcopia',
+      fecha_evento: ev.fecha_evento ? ev.fecha_evento.split('T')[0] : '',
+      resultado: ev.resultado || 'NORMAL',
+      establecimiento: ev.establecimiento || '',
+      fecha_probable_parto: '',
+      fecha_proximo_control: ev.fecha_proximo_control ? ev.fecha_proximo_control.split('T')[0] : '',
+      observaciones: ev.observaciones || '',
+    });
+    setErrorForm('');
+    setDialogo('evento');
+  };
+
+  const iniciarEdicionTratamiento = (tr: Treatment) => {
+    setEditandoTratamiento(tr);
+    setNuevoTratamiento({
+      tipo_tratamiento: tr.tipo_tratamiento || 'Crioterapia',
+      fecha_tratamiento: tr.fecha_tratamiento ? tr.fecha_tratamiento.split('T')[0] : '',
+      ginecologo_responsable: tr.ginecologo_responsable || '',
+      observaciones: tr.observaciones || '',
+    });
+    setErrorForm('');
+    setDialogo('tratamiento');
+  };
 
   const iniciarEdicion = (det: PatientDetail) => {
     setEditDni(det.patient.dni);
@@ -891,137 +978,152 @@ export default function App() {
           aria-label="Registro de pacientes"
           inert={!dosColumnas && seleccionada !== null}
         >
-          {vista === 'calendario' ? (
-            <Calendario
-              patients={patients}
-              onSelectPatient={setSeleccionada}
-              seleccionada={seleccionada}
-            />
-          ) : (
-            <>
-              <div className="buscador">
-                <div className="buscador-principal">
-                  <div className="buscador-input-wrapper">
-                    <Search size={18} aria-hidden="true" />
-                    <label className="sr-only" htmlFor="buscar">
-                      Buscar paciente por nombre, DNI o historia clínica
-                    </label>
-                    <input
-                      id="buscar"
-                      type="search"
-                      placeholder="Buscar por nombre, DNI o historia clínica"
-                      value={busqueda}
-                      onChange={(e) => setBusqueda(e.target.value)}
-                      disabled={modoExportar}
-                    />
-                  </div>
+          <div className="buscador">
+            <div className="buscador-principal">
+              <div className="buscador-input-wrapper">
+                <Search size={18} aria-hidden="true" />
+                <label className="sr-only" htmlFor="buscar">
+                  Buscar paciente por nombre, DNI o historia clínica
+                </label>
+                <input
+                  id="buscar"
+                  type="search"
+                  placeholder={vista === 'calendario' ? "Buscar en el calendario..." : "Buscar por nombre, DNI o historia clínica"}
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  disabled={modoExportar}
+                />
+              </div>
+              <button
+                type="button"
+                className={`btn btn--secundario btn--filtros-maestros ${filtrosAvanzadosAbiertos ? 'btn--activo' : ''}`}
+                onClick={() => setFiltrosAvanzadosAbiertos(!filtrosAvanzadosAbiertos)}
+                title="Filtros maestros"
+                disabled={modoExportar}
+              >
+                Filtros
+              </button>
+              {!modoExportar && (busqueda || filtroCepa || filtroAnio) && (
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={() => {
+                    setBusqueda('');
+                    setFiltroCepa('');
+                    setFiltroAnio('');
+                  }}
+                  title="Limpiar filtros"
+                  style={{ padding: '0 0.75rem', minWidth: 'auto' }}
+                >
+                  <Trash size={16} aria-hidden="true" />
+                </button>
+              )}
+              {vista === 'lista' && (
+                !modoExportar ? (
                   <button
                     type="button"
-                    className={`btn btn--secundario btn--filtros-maestros ${filtrosAvanzadosAbiertos ? 'btn--activo' : ''}`}
-                    onClick={() => setFiltrosAvanzadosAbiertos(!filtrosAvanzadosAbiertos)}
-                    title="Filtros maestros"
-                    disabled={modoExportar}
+                    className="btn btn--exportar"
+                    onClick={() => setModoExportar(true)}
+                    title="Activar modo exportación"
                   >
-                    Filtros
+                    Exportar
                   </button>
-                  {!modoExportar ? (
+                ) : (
+                  <>
                     <button
                       type="button"
                       className="btn btn--exportar"
-                      onClick={() => setModoExportar(true)}
-                      title="Activar modo exportación"
+                      onClick={() => {
+                        const seleccionadosList = patients.filter(p => seleccionados.has(p.id));
+                        exportarExcel(seleccionadosList);
+                      }}
+                      disabled={seleccionados.size === 0}
+                      title="Exportar seleccionadas"
                     >
-                      Exportar
+                      Exportar ({seleccionados.size})
                     </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn--exportar"
-                        onClick={() => {
-                          const seleccionadosList = patients.filter(p => seleccionados.has(p.id));
-                          exportarExcel(seleccionadosList);
-                        }}
-                        disabled={seleccionados.size === 0}
-                        title="Exportar seleccionadas"
-                      >
-                        Exportar ({seleccionados.size})
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--exportar btn--secundario"
-                        onClick={() => exportarExcel(filteredPatients)}
-                        title="Exportar todas las que coinciden con los filtros"
-                      >
-                        Exportar todas
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--cancelar"
-                        onClick={() => {
-                          setModoExportar(false);
-                          setSeleccionados(new Set());
-                        }}
-                        title="Salir del modo exportación"
-                      >
-                        Cancelar
-                      </button>
-                    </>
-                  )}
+                    <button
+                      type="button"
+                      className="btn btn--exportar btn--secundario"
+                      onClick={() => exportarExcel(filteredPatients)}
+                      title="Exportar todas las que coinciden con los filtros"
+                    >
+                      Exportar todas
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--cancelar"
+                      onClick={() => {
+                        setModoExportar(false);
+                        setSeleccionados(new Set());
+                      }}
+                      title="Salir del modo exportación"
+                    >
+                      Cancelar
+                    </button>
+                  </>
+                )
+              )}
+            </div>
+
+            {filtrosAvanzadosAbiertos && (
+              <div className="filtros-avanzados">
+                <div className="campo">
+                  <label htmlFor="filtro-cepa">Cepa VPH</label>
+                  <select
+                    id="filtro-cepa"
+                    value={filtroCepa}
+                    onChange={(e) => setFiltroCepa(e.target.value)}
+                  >
+                    <option value="">Todas las cepas</option>
+                    <option value="VPH 16">VPH 16</option>
+                    <option value="VPH 18">VPH 18</option>
+                    <option value="VPH Otros A/R">VPH Otros A/R</option>
+                  </select>
                 </div>
 
-                {filtrosAvanzadosAbiertos && (
-                  <div className="filtros-avanzados">
-                    <div className="campo">
-                      <label htmlFor="filtro-cepa">Cepa VPH</label>
-                      <select
-                        id="filtro-cepa"
-                        value={filtroCepa}
-                        onChange={(e) => setFiltroCepa(e.target.value)}
-                      >
-                        <option value="">Todas las cepas</option>
-                        <option value="VPH 16">VPH 16</option>
-                        <option value="VPH 18">VPH 18</option>
-                        <option value="VPH Otros A/R">VPH Otros A/R</option>
-                      </select>
-                    </div>
+                <div className="campo">
+                  <label htmlFor="filtro-tipo-fecha">Filtrar fecha por</label>
+                  <select
+                    id="filtro-tipo-fecha"
+                    value={tipoFecha}
+                    onChange={(e) => setTipoFecha(e.target.value as any)}
+                  >
+                    <option value="fecha_registro">Fecha de registro</option>
+                    <option value="ultimo_evento">Último evento</option>
+                    <option value="proximo_control">Próximo control</option>
+                  </select>
+                </div>
 
-                    <div className="campo">
-                      <label htmlFor="filtro-tipo-fecha">Filtrar fecha por</label>
-                      <select
-                        id="filtro-tipo-fecha"
-                        value={tipoFecha}
-                        onChange={(e) => setTipoFecha(e.target.value as any)}
-                      >
-                        <option value="proximo_control">Próximo control</option>
-                        <option value="ultimo_evento">Último evento</option>
-                        <option value="fecha_registro">Fecha de registro</option>
-                      </select>
-                    </div>
-
-                    <div className="campo">
-                      <label htmlFor="filtro-fecha-inicio">Desde</label>
-                      <input
-                        id="filtro-fecha-inicio"
-                        type="date"
-                        value={fechaInicio}
-                        onChange={(e) => setFechaInicio(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="campo">
-                      <label htmlFor="filtro-fecha-fin">Hasta</label>
-                      <input
-                        id="filtro-fecha-fin"
-                        type="date"
-                        value={fechaFin}
-                        onChange={(e) => setFechaFin(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
+                <div className="campo">
+                  <label htmlFor="filtro-anio">Año</label>
+                  <select
+                    id="filtro-anio"
+                    value={filtroAnio}
+                    onChange={(e) => setFiltroAnio(e.target.value)}
+                  >
+                    <option value="">Todos los años</option>
+                    {aniosDisponibles.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+            )}
+          </div>
 
+          {vista === 'calendario' ? (
+            <Calendario
+              patients={filteredPatients}
+              onSelectPatient={setSeleccionada}
+              seleccionada={seleccionada}
+              filtroAnio={filtroAnio}
+              items={filteredCalendarItems}
+            />
+          ) : (
+            <>
               {modoExportar ? (
                 <div className="registro-encabezado-wrapper">
                   <div className="fila-check-container header-check-container" aria-hidden="true">
@@ -1074,14 +1176,14 @@ export default function App() {
                   <h2>
                     {filtro === 'vencidas'
                       ? 'Ninguna paciente vencida'
-                      : (busqueda || filtroCepa || fechaInicio || fechaFin)
+                      : (busqueda || filtroCepa || filtroAnio)
                         ? 'Sin coincidencias'
                         : 'Sin pacientes en este filtro'}
                   </h2>
                   <p>
                     {filtro === 'vencidas'
                       ? 'Todas las pacientes en seguimiento están dentro de su plazo de control.'
-                      : (busqueda || filtroCepa || fechaInicio || fechaFin)
+                      : (busqueda || filtroCepa || filtroAnio)
                         ? 'Ninguna paciente coincide con los filtros aplicados.'
                         : 'El registro respondió correctamente: no hay pacientes en este estado.'}
                   </p>
@@ -1346,29 +1448,38 @@ export default function App() {
                             {detalle.eventos.map((ev) => (
                               <li key={ev.id} className="resultado">
                                 <span className="resultado-fecha">{fecha(ev.fecha_evento)}</span>
-                                <div>
-                                  <span className="resultado-titulo">
-                                    {ev.tipo_evento}
-                                    {ev.resultado && (
-                                      <>
-                                        {' · '}
-                                        <span
-                                          className={`resultado-valor${fueraDeRango(ev.resultado) ? ' resultado-valor--fuera' : ''}`}
-                                        >
-                                          {fueraDeRango(ev.resultado) && (
-                                            <span aria-hidden="true">▲ </span>
-                                          )}
-                                          {ev.resultado}
-                                        </span>
-                                      </>
-                                    )}
-                                  </span>
-                                  <span className="resultado-meta">
-                                    {ev.establecimiento ? `${ev.establecimiento}` : 'Establecimiento no registrado'}
-                                    {ev.fecha_proximo_control &&
-                                      ` · próximo control ${fecha(ev.fecha_proximo_control)}`}
-                                  </span>
-                                  {ev.observaciones && <p className="resultado-nota">{ev.observaciones}</p>}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', width: '100%' }}>
+                                  <div>
+                                    <span className="resultado-titulo">
+                                      {ev.tipo_evento}
+                                      {ev.resultado && (
+                                        <>
+                                          {' · '}
+                                          <span
+                                            className={`resultado-valor${fueraDeRango(ev.resultado) ? ' resultado-valor--fuera' : ''}`}
+                                          >
+                                            {fueraDeRango(ev.resultado) && (
+                                              <span aria-hidden="true">▲ </span>
+                                            )}
+                                            {ev.resultado}
+                                          </span>
+                                        </>
+                                      )}
+                                    </span>
+                                    <span className="resultado-meta">
+                                      {ev.establecimiento ? `${ev.establecimiento}` : 'Establecimiento no registrado'}
+                                      {ev.fecha_proximo_control &&
+                                        ` · próximo control ${fecha(ev.fecha_proximo_control)}`}
+                                    </span>
+                                    {ev.observaciones && <p className="resultado-nota">{ev.observaciones}</p>}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn--chico"
+                                    onClick={() => iniciarEdicionEvento(ev)}
+                                  >
+                                    Editar
+                                  </button>
                                 </div>
                               </li>
                             ))}
@@ -1384,15 +1495,24 @@ export default function App() {
                           <ol className="resultados">
                             {detalle.tratamientos.map((tr) => (
                               <li key={tr.id} className="resultado">
-                                <span className="resultado-fecha">{fecha(tr.fecha_tratamiento)}</span>
-                                <div>
-                                  <span className="resultado-titulo">{tr.tipo_tratamiento}</span>
-                                  <span className="resultado-meta">
-                                    {tr.ginecologo_responsable
-                                      ? `Ginecólogo: ${tr.ginecologo_responsable}`
-                                      : 'Ginecólogo no registrado'}
-                                  </span>
-                                  {tr.observaciones && <p className="resultado-nota">{tr.observaciones}</p>}
+                                <span className="resultado-fecha">{fecha(tr.fecha_treatment || tr.fecha_tratamiento)}</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', width: '100%' }}>
+                                  <div>
+                                    <span className="resultado-titulo">{tr.tipo_tratamiento}</span>
+                                    <span className="resultado-meta">
+                                      {tr.ginecologo_responsable
+                                        ? `Ginecólogo: ${tr.ginecologo_responsable}`
+                                        : 'Ginecólogo no registrado'}
+                                    </span>
+                                    {tr.observaciones && <p className="resultado-nota">{tr.observaciones}</p>}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn--chico"
+                                    onClick={() => iniciarEdicionTratamiento(tr)}
+                                  >
+                                    Editar
+                                  </button>
                                 </div>
                               </li>
                             ))}
@@ -1593,26 +1713,45 @@ export default function App() {
         </Dialogo>
       )}
 
-      {/* --- Evento clínico --- */}
       {dialogo === 'evento' && seleccionada !== null && (
-        <Dialogo titulo="Registrar evento clínico" onCerrar={() => setDialogo(null)}>
+        <Dialogo titulo={editandoEvento ? "Modificar evento clínico" : "Registrar evento clínico"} onCerrar={() => { setDialogo(null); setEditandoEvento(null); }}>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const ok = await enviar(
-                `${API_BASE_URL}/eventos`,
-                { paciente_id: seleccionada, ...nuevoEvento },
-                'Evento registrado.',
-              );
-              if (ok)
+              let ok;
+              if (editandoEvento) {
+                ok = await enviar(
+                  `${API_BASE_URL}/eventos/${editandoEvento.id}`,
+                  {
+                    tipo_evento: nuevoEvento.tipo_evento,
+                    fecha_evento: nuevoEvento.fecha_evento,
+                    resultado: nuevoEvento.resultado,
+                    establecimiento: nuevoEvento.establecimiento,
+                    fecha_proximo_control: nuevoEvento.fecha_proximo_control || null,
+                    observaciones: nuevoEvento.observaciones,
+                  },
+                  'Evento modificado.',
+                  'PUT',
+                );
+              } else {
+                ok = await enviar(
+                  `${API_BASE_URL}/eventos`,
+                  { paciente_id: seleccionada, ...nuevoEvento },
+                  'Evento registrado.',
+                );
+              }
+              if (ok) {
+                setEditandoEvento(null);
                 setNuevoEvento({
                   tipo_evento: 'Colposcopia',
                   fecha_evento: '',
                   resultado: 'NORMAL',
                   establecimiento: 'HDSI',
                   fecha_probable_parto: '',
+                  fecha_proximo_control: '',
                   observaciones: '',
                 });
+              }
             }}
           >
             <div className="dialogo-cuerpo">
@@ -1727,6 +1866,21 @@ export default function App() {
                 </p>
               )}
 
+              {editandoEvento && (
+                <div className="campo">
+                  <label htmlFor="ne-proximo-control">Fecha de próximo control</label>
+                  <input
+                    id="ne-proximo-control"
+                    type="date"
+                    value={nuevoEvento.fecha_proximo_control}
+                    onChange={(e) => setNuevoEvento({ ...nuevoEvento, fecha_proximo_control: e.target.value })}
+                  />
+                  <span className="campo-ayuda">
+                    Opcional. Modifica o elimina la fecha para cambiar el próximo control agendado de la paciente.
+                  </span>
+                </div>
+              )}
+
               <div className="campo">
                 <label htmlFor="ne-obs">Observaciones</label>
                 <textarea
@@ -1742,35 +1896,65 @@ export default function App() {
             </div>
 
             <div className="dialogo-pie">
-              <button type="button" className="btn" onClick={() => setDialogo(null)}>
+              {editandoEvento && (
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={async () => {
+                    if (window.confirm('¿Está seguro de eliminar este evento clínico? Esta acción no se puede deshacer.')) {
+                      const ok = await enviar(`${API_BASE_URL}/eventos/${editandoEvento.id}`, null, 'Evento eliminado.', 'DELETE');
+                      if (ok) {
+                        setDialogo(null);
+                        setEditandoEvento(null);
+                      }
+                    }
+                  }}
+                  disabled={guardando}
+                  style={{ marginRight: 'auto' }}
+                >
+                  Eliminar evento
+                </button>
+              )}
+              <button type="button" className="btn" onClick={() => { setDialogo(null); setEditandoEvento(null); }}>
                 Cancelar
               </button>
               <button type="submit" className="btn btn--principal" disabled={guardando}>
-                {guardando ? 'Guardando…' : 'Registrar evento'}
+                {guardando ? 'Guardando…' : (editandoEvento ? 'Guardar cambios' : 'Registrar evento')}
               </button>
             </div>
           </form>
         </Dialogo>
       )}
 
-      {/* --- Tratamiento --- */}
       {dialogo === 'tratamiento' && seleccionada !== null && (
-        <Dialogo titulo="Registrar tratamiento" onCerrar={() => setDialogo(null)}>
+        <Dialogo titulo={editandoTratamiento ? "Modificar tratamiento" : "Registrar tratamiento"} onCerrar={() => { setDialogo(null); setEditandoTratamiento(null); }}>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              const ok = await enviar(
-                `${API_BASE_URL}/tratamientos`,
-                { paciente_id: seleccionada, ...nuevoTratamiento },
-                'Tratamiento registrado.',
-              );
-              if (ok)
+              let ok;
+              if (editandoTratamiento) {
+                ok = await enviar(
+                  `${API_BASE_URL}/tratamientos/${editandoTratamiento.id}`,
+                  nuevoTratamiento,
+                  'Tratamiento modificado.',
+                  'PUT',
+                );
+              } else {
+                ok = await enviar(
+                  `${API_BASE_URL}/tratamientos`,
+                  { paciente_id: seleccionada, ...nuevoTratamiento },
+                  'Tratamiento registrado.',
+                );
+              }
+              if (ok) {
+                setEditandoTratamiento(null);
                 setNuevoTratamiento({
                   tipo_tratamiento: 'Crioterapia',
                   fecha_tratamiento: '',
                   ginecologo_responsable: '',
                   observaciones: '',
                 });
+              }
             }}
           >
             <div className="dialogo-cuerpo">
@@ -1844,11 +2028,30 @@ export default function App() {
             </div>
 
             <div className="dialogo-pie">
-              <button type="button" className="btn" onClick={() => setDialogo(null)}>
+              {editandoTratamiento && (
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={async () => {
+                    if (window.confirm('¿Está seguro de eliminar este tratamiento? Esta acción no se puede deshacer.')) {
+                      const ok = await enviar(`${API_BASE_URL}/tratamientos/${editandoTratamiento.id}`, null, 'Tratamiento eliminado.', 'DELETE');
+                      if (ok) {
+                        setDialogo(null);
+                        setEditandoTratamiento(null);
+                      }
+                    }
+                  }}
+                  disabled={guardando}
+                  style={{ marginRight: 'auto' }}
+                >
+                  Eliminar tratamiento
+                </button>
+              )}
+              <button type="button" className="btn" onClick={() => { setDialogo(null); setEditandoTratamiento(null); }}>
                 Cancelar
               </button>
               <button type="submit" className="btn btn--principal" disabled={guardando}>
-                {guardando ? 'Guardando…' : 'Registrar tratamiento'}
+                {guardando ? 'Guardando…' : (editandoTratamiento ? 'Guardar cambios' : 'Registrar tratamiento')}
               </button>
             </div>
           </form>

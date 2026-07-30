@@ -64,8 +64,27 @@ func main() {
 	})))
 
 	// Events and Treatments API Endpoints (Protected)
+	mux.Handle("/api/eventos/calendario", middleware.AuthMiddleware(http.HandlerFunc(eventHandler.GetCalendarEvents)))
 	mux.Handle("/api/eventos", middleware.AuthMiddleware(http.HandlerFunc(eventHandler.CreateEvent)))
+	mux.Handle("/api/eventos/", middleware.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			eventHandler.UpdateEvent(w, r)
+		} else if r.Method == http.MethodDelete {
+			eventHandler.DeleteEvent(w, r)
+		} else {
+			handlers.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+	})))
 	mux.Handle("/api/tratamientos", middleware.AuthMiddleware(http.HandlerFunc(eventHandler.CreateTreatment)))
+	mux.Handle("/api/tratamientos/", middleware.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			eventHandler.UpdateTreatment(w, r)
+		} else if r.Method == http.MethodDelete {
+			eventHandler.DeleteTreatment(w, r)
+		} else {
+			handlers.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+	})))
 	mux.Handle("/api/gestaciones/parto", middleware.AuthMiddleware(http.HandlerFunc(eventHandler.RegisterBirth)))
 
 	// Auth Debug (Protected - tests if token and secret are correct)

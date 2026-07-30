@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -421,4 +422,245 @@ func (h *EventHandler) RegisterBirth(w http.ResponseWriter, r *http.Request) {
 		"message":              "Birth registered. Patient state reactivated to Activa.",
 		"fecha_fin_puerperio":  finPuerperio,
 	})
+}
+
+type UpdateEventRequest struct {
+	TipoEvento          string  `json:"tipo_evento"`
+	FechaEvento         string  `json:"fecha_evento"`
+	Resultado           string  `json:"resultado"`
+	Establecimiento     string  `json:"establecimiento"`
+	FechaProximoControl *string `json:"fecha_proximo_control"`
+	Observaciones       string  `json:"observaciones"`
+}
+
+type UpdateTreatmentRequest struct {
+	TipoTratamiento       string `json:"tipo_tratamiento"`
+	FechaTratamiento      string `json:"fecha_tratamiento"`
+	GinecologoResponsable string `json:"ginecologo_responsable"`
+	Observaciones         string `json:"observaciones"`
+}
+
+// UpdateEvent handles PUT /api/eventos/{id}
+func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		SendError(w, http.StatusBadRequest, "Invalid URL path")
+		return
+	}
+	idStr := parts[3]
+	eventID, err := strconv.Atoi(idStr)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid event ID")
+		return
+	}
+
+	var req UpdateEventRequest
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	if req.TipoEvento == "" {
+		SendError(w, http.StatusBadRequest, "TipoEvento is required")
+		return
+	}
+
+	parsedDate, ok := parseFecha(req.FechaEvento)
+	if !ok {
+		SendError(w, http.StatusBadRequest, "Invalid date format for fecha_evento, use YYYY-MM-DD")
+		return
+	}
+
+	var parsedNextControl *time.Time
+	if req.FechaProximoControl != nil && *req.FechaProximoControl != "" {
+		t, ok := parseFecha(*req.FechaProximoControl)
+		if !ok {
+			SendError(w, http.StatusBadRequest, "Invalid date format for fecha_proximo_control, use YYYY-MM-DD")
+			return
+		}
+		parsedNextControl = &t
+	}
+
+	_, err = h.Pool.Exec(ctx,
+		`UPDATE eventos_clinicos
+		 SET tipo_evento = $1, fecha_evento = $2, resultado = $3, establecimiento = $4, fecha_proximo_control = $5, observaciones = $6
+		 WHERE id = $7`,
+		req.TipoEvento, parsedDate, req.Resultado, req.Establecimiento, parsedNextControl, req.Observaciones, eventID,
+	)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, "Error updating clinical event: "+err.Error())
+		return
+	}
+
+	SendJSON(w, http.StatusOK, map[string]string{"message": "Event updated successfully"})
+}
+
+// DeleteEvent handles DELETE /api/eventos/{id}
+func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		SendError(w, http.StatusBadRequest, "Invalid URL path")
+		return
+	}
+	idStr := parts[3]
+	eventID, err := strconv.Atoi(idStr)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid event ID")
+		return
+	}
+
+	_, err = h.Pool.Exec(ctx, "DELETE FROM eventos_clinicos WHERE id = $1", eventID)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, "Error deleting event: "+err.Error())
+		return
+	}
+
+	SendJSON(w, http.StatusOK, map[string]string{"message": "Event deleted successfully"})
+}
+
+// UpdateTreatment handles PUT /api/tratamientos/{id}
+func (h *EventHandler) UpdateTreatment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		SendError(w, http.StatusBadRequest, "Invalid URL path")
+		return
+	}
+	idStr := parts[3]
+	treatmentID, err := strconv.Atoi(idStr)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid treatment ID")
+		return
+	}
+
+	var req UpdateTreatmentRequest
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	if req.TipoTratamiento == "" {
+		SendError(w, http.StatusBadRequest, "TipoTratamiento is required")
+		return
+	}
+
+	parsedDate, ok := parseFecha(req.FechaTratamiento)
+	if !ok {
+		SendError(w, http.StatusBadRequest, "Invalid date format for fecha_tratamiento, use YYYY-MM-DD")
+		return
+	}
+
+	_, err = h.Pool.Exec(ctx,
+		`UPDATE tratamientos
+		 SET tipo_tratamiento = $1, fecha_tratamiento = $2, ginecologo_responsable = $3, observaciones = $4
+		 WHERE id = $5`,
+		req.TipoTratamiento, parsedDate, req.GinecologoResponsable, req.Observaciones, treatmentID,
+	)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, "Error updating treatment: "+err.Error())
+		return
+	}
+
+	SendJSON(w, http.StatusOK, map[string]string{"message": "Treatment updated successfully"})
+}
+
+// DeleteTreatment handles DELETE /api/tratamientos/{id}
+func (h *EventHandler) DeleteTreatment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 4 {
+		SendError(w, http.StatusBadRequest, "Invalid URL path")
+		return
+	}
+	idStr := parts[3]
+	treatmentID, err := strconv.Atoi(idStr)
+	if err != nil {
+		SendError(w, http.StatusBadRequest, "Invalid treatment ID")
+		return
+	}
+
+	_, err = h.Pool.Exec(ctx, "DELETE FROM tratamientos WHERE id = $1", treatmentID)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, "Error deleting treatment: "+err.Error())
+		return
+	}
+
+	SendJSON(w, http.StatusOK, map[string]string{"message": "Treatment deleted successfully"})
+}
+
+// GetCalendarEvents handles GET /api/eventos/calendario
+func (h *EventHandler) GetCalendarEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	query := `
+		SELECT 'evento' AS origin, e.id, e.paciente_id, p.nombres, e.tipo_evento, e.fecha_evento, COALESCE(e.resultado, ''), COALESCE(e.observaciones, ''), p.estado_actual
+		FROM eventos_clinicos e
+		JOIN pacientes p ON e.paciente_id = p.id
+		WHERE p.eliminado = FALSE
+		UNION ALL
+		SELECT 'tratamiento' AS origin, t.id, t.paciente_id, p.nombres, t.tipo_tratamiento, t.fecha_tratamiento, 'TRATADA', COALESCE(t.observaciones, ''), p.estado_actual
+		FROM tratamientos t
+		JOIN pacientes p ON t.paciente_id = p.id
+		WHERE p.eliminado = FALSE
+		ORDER BY fecha_evento DESC
+	`
+	rows, err := h.Pool.Query(ctx, query)
+	if err != nil {
+		SendError(w, http.StatusInternalServerError, "Error querying calendar events: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type CalendarItem struct {
+		Origin          string    `json:"origin"`
+		ID              int       `json:"id"`
+		PacienteID      int       `json:"paciente_id"`
+		PacienteNombres string    `json:"paciente_nombres"`
+		Tipo            string    `json:"tipo"`
+		Fecha           time.Time `json:"fecha"`
+		Resultado       string    `json:"resultado"`
+		Observaciones   string    `json:"observaciones"`
+		EstadoActual    string    `json:"estado_actual"`
+	}
+
+	items := []CalendarItem{}
+	for rows.Next() {
+		var item CalendarItem
+		err := rows.Scan(&item.Origin, &item.ID, &item.PacienteID, &item.PacienteNombres, &item.Tipo, &item.Fecha, &item.Resultado, &item.Observaciones, &item.EstadoActual)
+		if err != nil {
+			SendError(w, http.StatusInternalServerError, "Error scanning calendar item: "+err.Error())
+			return
+		}
+		items = append(items, item)
+	}
+
+	SendJSON(w, http.StatusOK, items)
 }

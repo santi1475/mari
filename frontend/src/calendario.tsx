@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { aDia, fecha } from './clinical';
 
@@ -13,23 +13,130 @@ interface Patient {
   proximo_control?: string | null;
 }
 
+export interface CalendarItem {
+  origin: 'evento' | 'tratamiento';
+  id: number;
+  paciente_id: number;
+  paciente_nombres: string;
+  tipo: string;
+  fecha: string; // YYYY-MM-DD
+  resultado: string;
+  observaciones: string;
+  estado_actual: string;
+}
+
 interface CalendarioProps {
   patients: Patient[];
   onSelectPatient: (id: number) => void;
   seleccionada: number | null;
+  filtroAnio?: string;
+  items: CalendarItem[];
 }
 
 type Mode = 'mes' | 'semana' | 'agenda';
 
-export default function Calendario({ patients, onSelectPatient, seleccionada }: CalendarioProps) {
+export default function Calendario({ patients, onSelectPatient, seleccionada, filtroAnio, items = [] }: CalendarioProps) {
   const [modo, setModo] = useState<Mode>('mes');
   const [refFecha, setRefFecha] = useState<Date>(() => {
     const d = new Date();
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1));
   });
 
-  // Filter patients that have a scheduled next control
-  const patientsConCita = patients.filter((p) => p.proximo_control);
+  // If user filters by a specific year, make the calendar jump to that year
+  useEffect(() => {
+    if (filtroAnio) {
+      const targetYear = parseInt(filtroAnio, 10);
+      if (!isNaN(targetYear) && refFecha.getUTCFullYear() !== targetYear) {
+        setRefFecha((prev) => {
+          const next = new Date(prev.getTime());
+          next.setUTCFullYear(targetYear);
+          return next;
+        });
+      }
+    }
+  }, [filtroAnio, refFecha]);
+
+  const virtualControls: CalendarItem[] = patients
+    .filter(p => p.proximo_control)
+    .map(p => ({
+      origin: 'evento',
+      id: -p.id,
+      paciente_id: p.id,
+      paciente_nombres: p.nombres,
+      tipo: 'Control Programado',
+      fecha: p.proximo_control!,
+      resultado: 'PROGRAMADO',
+      observaciones: '',
+      estado_actual: p.estado_actual
+    }));
+
+  // Combine both actual events/treatments and virtual scheduled controls
+  const todosLosEventos = [...items, ...virtualControls];
+
+  const eventsFormatted = todosLosEventos.map(item => ({
+    ...item,
+    fechaDia: item.fecha.slice(0, 10)
+  }));
+
+  // Helper to color code calendar items according to their type and results
+  const getEstiloCita = (tipo: string, resultado: string) => {
+    const t = tipo.toUpperCase();
+    const r = (resultado || '').toUpperCase();
+
+    // Treatments -> Soft Purple
+    if (
+      t.includes('CRIOTERAPIA') ||
+      t.includes('TERMOCOAGULACION') ||
+      t.includes('CONIZACION') ||
+      t.includes('LEEP') ||
+      t.includes('HISTERECTOMIA') ||
+      t.includes('TRATAMIENTO')
+    ) {
+      return {
+        background: 'var(--pausa-papel)',
+        borderColor: 'var(--pausa)',
+        color: 'var(--pausa)',
+      };
+    }
+
+    // Abnormal/Positive results -> Soft Red
+    if (
+      r.includes('POSITIVO') ||
+      r.includes('ALTERADO') ||
+      r.includes('NIC') ||
+      r.includes('CÁNCER') ||
+      r.includes('CANCER') ||
+      r.includes('LESION') ||
+      r.includes('LESIÓN') ||
+      r.includes('AGUS') ||
+      r.includes('HSIL') ||
+      r.includes('LSIL') ||
+      r.includes('ASC-US') ||
+      r.includes('ASC-H')
+    ) {
+      return {
+        background: 'var(--senal-papel)',
+        borderColor: 'var(--senal)',
+        color: 'var(--senal)',
+      };
+    }
+
+    // Normal/Negative results -> Soft Green
+    if (r.includes('NORMAL') || r.includes('NEGATIVO') || r.includes('SANO')) {
+      return {
+        background: 'color-mix(in srgb, var(--rango) 10%, #ffffff)',
+        borderColor: 'var(--rango)',
+        color: 'var(--rango)',
+      };
+    }
+
+    // Controls & Referrals -> Neutral/Blue
+    return {
+      background: 'var(--papel)',
+      borderColor: 'var(--regla-fuerte)',
+      color: 'var(--tinta)',
+    };
+  };
 
   // Helper to change reference date
   const navegar = (direccion: number) => {
@@ -145,24 +252,29 @@ export default function Calendario({ patients, onSelectPatient, seleccionada }: 
           if (!dia) return <div key={`empty-${idx}`} className="cal-dia-celda cal-dia-celda--vacio" />;
 
           const isoStr = dia.toISOString().slice(0, 10);
-          const citas = patientsConCita.filter((p) => p.proximo_control === isoStr);
+          const citas = eventsFormatted.filter((item) => item.fechaDia === isoStr);
           const esHoy = new Date().toISOString().slice(0, 10) === isoStr;
 
           return (
             <div key={isoStr} className={`cal-dia-celda ${esHoy ? 'cal-dia-celda--hoy' : ''}`}>
               <span className="cal-dia-numero">{dia.getUTCDate()}</span>
               <div className="cal-dia-citas">
-                {citas.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`cal-cita-badge cal-cita-badge--${p.estado_actual.toLowerCase()} ${seleccionada === p.id ? 'cal-cita-badge--seleccionada' : ''}`}
-                    onClick={() => onSelectPatient(p.id)}
-                    title={p.nombres}
-                  >
-                    {p.nombres.split(' ')[0]}
-                  </button>
-                ))}
+                {citas.map((item) => {
+                  const estilo = getEstiloCita(item.tipo, item.resultado);
+                  const shortName = item.paciente_nombres.split(' ')[0];
+                  return (
+                    <button
+                      key={`${item.origin}-${item.id}`}
+                      type="button"
+                      className={`cal-cita-badge ${seleccionada === item.paciente_id ? 'cal-cita-badge--seleccionada' : ''}`}
+                      onClick={() => onSelectPatient(item.paciente_id)}
+                      title={`${item.paciente_nombres} - ${item.tipo}: ${item.resultado}`}
+                      style={estilo}
+                    >
+                      {shortName}: {item.tipo} ({item.resultado})
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
@@ -187,7 +299,7 @@ export default function Calendario({ patients, onSelectPatient, seleccionada }: 
       <div className="cal-semana-grid">
         {diasSemana.map((dia, idx) => {
           const isoStr = dia.toISOString().slice(0, 10);
-          const citas = patientsConCita.filter((p) => p.proximo_control === isoStr);
+          const citas = eventsFormatted.filter((item) => item.fechaDia === isoStr);
           const esHoy = new Date().toISOString().slice(0, 10) === isoStr;
 
           return (
@@ -197,17 +309,22 @@ export default function Calendario({ patients, onSelectPatient, seleccionada }: 
                 <span className="cal-semana-dia-numero">{dia.getUTCDate()}</span>
               </div>
               <div className="cal-semana-citas">
-                {citas.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`cal-cita-tarjeta cal-cita-tarjeta--${p.estado_actual.toLowerCase()} ${seleccionada === p.id ? 'cal-cita-tarjeta--seleccionada' : ''}`}
-                    onClick={() => onSelectPatient(p.id)}
-                  >
-                    <span className="cal-cita-paciente">{p.nombres}</span>
-                    <span className="cal-cita-estado rotulo">{p.estado_actual}</span>
-                  </button>
-                ))}
+                {citas.map((item) => {
+                  const estilo = getEstiloCita(item.tipo, item.resultado);
+                  return (
+                    <button
+                      key={`${item.origin}-${item.id}`}
+                      type="button"
+                      className={`cal-cita-tarjeta ${seleccionada === item.paciente_id ? 'cal-cita-tarjeta--seleccionada' : ''}`}
+                      onClick={() => onSelectPatient(item.paciente_id)}
+                      style={estilo}
+                    >
+                      <span className="cal-cita-paciente" style={{ fontWeight: 'bold' }}>{item.paciente_nombres}</span>
+                      <span className="cal-cita-tipo" style={{ fontSize: '0.75rem', opacity: 0.9 }}>{item.tipo}</span>
+                      <span className="cal-cita-resultado rotulo" style={{ display: 'inline-block', marginTop: '2px', fontSize: '0.6875rem', letterSpacing: '0.05em' }}>{item.resultado}</span>
+                    </button>
+                  );
+                })}
                 {citas.length === 0 && (
                   <span className="cal-semana-vacio">Sin controles</span>
                 )}
@@ -225,44 +342,60 @@ export default function Calendario({ patients, onSelectPatient, seleccionada }: 
     const anio = refFecha.getUTCFullYear();
 
     // Filter appointments belonging to the reference month
-    const citasMes = patientsConCita
-      .filter((p) => {
-        const d = aDia(p.proximo_control);
+    const citasMes = eventsFormatted
+      .filter((item) => {
+        const d = aDia(item.fechaDia);
         return d && d.getUTCMonth() === mes && d.getUTCFullYear() === anio;
       })
-      .sort((a, b) => (a.proximo_control || '').localeCompare(b.proximo_control || ''));
+      .sort((a, b) => a.fechaDia.localeCompare(b.fechaDia));
 
     if (citasMes.length === 0) {
       return (
         <div className="cal-agenda-vacio">
-          <p>No hay controles de seguimiento programados para este mes.</p>
+          <p>No hay eventos o controles programados para este mes.</p>
         </div>
       );
     }
 
     return (
       <div className="cal-agenda-lista">
-        {citasMes.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`cal-agenda-item ${seleccionada === p.id ? 'cal-agenda-item--seleccionada' : ''}`}
-            onClick={() => onSelectPatient(p.id)}
-          >
-            <div className="cal-agenda-fecha cifra">{fecha(p.proximo_control)}</div>
-            <div className="cal-agenda-paciente">
-              <span className="cal-agenda-nombre">{p.nombres}</span>
-              <span className="cal-agenda-meta">
-                DNI {p.dni} {p.historia_clinica ? `· HC ${p.historia_clinica}` : ''}
-              </span>
-            </div>
-            <div className="cal-agenda-estado">
-              <span className={`badge-estado badge-estado--${p.estado_actual.toLowerCase()}`}>
-                {p.estado_actual}
-              </span>
-            </div>
-          </button>
-        ))}
+        {citasMes.map((item) => {
+          const estilo = getEstiloCita(item.tipo, item.resultado);
+          return (
+            <button
+              key={`${item.origin}-${item.id}`}
+              type="button"
+              className={`cal-agenda-item ${seleccionada === item.paciente_id ? 'cal-agenda-item--seleccionada' : ''}`}
+              onClick={() => onSelectPatient(item.paciente_id)}
+              style={{
+                borderLeft: `4px solid ${estilo.borderColor}`,
+                background: estilo.background,
+                color: estilo.color,
+                marginBottom: '0.5rem',
+                padding: '0.75rem',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                width: '100%'
+              }}
+            >
+              <div className="cal-agenda-fecha cifra" style={{ marginRight: '1rem', fontWeight: 'bold' }}>
+                {fecha(item.fechaDia)}
+              </div>
+              <div className="cal-agenda-paciente" style={{ flex: 1 }}>
+                <span className="cal-agenda-nombre" style={{ display: 'block', fontWeight: 'bold' }}>{item.paciente_nombres}</span>
+                <span className="cal-agenda-meta" style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                  {item.tipo} {item.resultado ? `· ${item.resultado}` : ''}
+                </span>
+              </div>
+              <div className="cal-agenda-estado">
+                <span className="badge-estado" style={{ background: estilo.borderColor, color: '#fff', fontSize: '0.6875rem', padding: '2px 6px', borderRadius: '3px' }}>
+                  {item.estado_actual}
+                </span>
+              </div>
+            </button>
+          );
+        })}
       </div>
     );
   };
