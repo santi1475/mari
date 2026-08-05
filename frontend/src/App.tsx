@@ -122,6 +122,12 @@ function Dialogo({
 }) {
   const caja = useRef<HTMLDivElement>(null);
   const previo = useRef<HTMLElement | null>(null);
+  const onCerrarRef = useRef(onCerrar);
+
+  // Mantener la referencia al callback de cierre actualizada
+  useEffect(() => {
+    onCerrarRef.current = onCerrar;
+  }, [onCerrar]);
 
   useEffect(() => {
     previo.current = document.activeElement as HTMLElement | null;
@@ -133,7 +139,7 @@ function Dialogo({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onCerrar();
+        onCerrarRef.current();
         return;
       }
       if (e.key !== 'Tab' || !caja.current) return;
@@ -165,7 +171,7 @@ function Dialogo({
       document.body.style.overflow = overflowPrevio;
       previo.current?.focus();
     };
-  }, [onCerrar]);
+  }, []);
 
   return (
     <div
