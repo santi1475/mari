@@ -7,6 +7,7 @@ import {
   fecha,
   fueraDeRango,
   hoyUTC,
+  obtenerResultados,
   seguimiento,
   textoSenal,
 } from './clinical.ts';
@@ -90,5 +91,14 @@ assert.equal(truncado.getUTCMinutes(), 0);
 assert.equal(truncado.getUTCDate(), tarde.getDate());
 assert.equal(truncado.getUTCMonth(), tarde.getMonth());
 assert.equal(truncado.getUTCFullYear(), tarde.getFullYear());
+
+// --- obtenerResultados ---
+assert.deepEqual(obtenerResultados('Colposcopia'), ['NORMAL', 'NIC I', 'NIC II', 'NIC III', 'POSITIVO', 'GESTANDO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados('Control 1'), ['NORMAL', 'NIC I', 'NIC II', 'NIC III', 'POSITIVO', 'GESTANDO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados('Control 2'), ['NORMAL', 'NIC I', 'NIC II', 'NIC III', 'POSITIVO', 'GESTANDO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados('CONTROL DE SEGUIMIENTO'), ['NORMAL', 'NIC I', 'NIC II', 'NIC III', 'POSITIVO', 'GESTANDO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados('Colposcopía'), ['NORMAL', 'NIC I', 'NIC II', 'NIC III', 'POSITIVO', 'GESTANDO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados('AlgoInexistente'), ['NORMAL', 'NEGATIVO', 'POSITIVO', 'NO ACUDIÓ']);
+assert.deepEqual(obtenerResultados(null), ['NORMAL', 'NEGATIVO', 'POSITIVO', 'NO ACUDIÓ']);
 
 console.log('clinical.ts OK');

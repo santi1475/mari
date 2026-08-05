@@ -14,12 +14,12 @@ import {
   X,
 } from 'lucide-react';
 import {
-  RESULTADOS,
   TIPOS_EVENTO,
   avanceVentana,
   consecuencia,
   fecha,
   fueraDeRango,
+  obtenerResultados,
   seguimiento,
   textoSenal,
   type Seguimiento,
@@ -1774,11 +1774,16 @@ export default function App() {
                       setNuevoEvento({
                         ...nuevoEvento,
                         tipo_evento: tipo,
-                        resultado: RESULTADOS[tipo][0],
+                        resultado: obtenerResultados(tipo)[0],
                         fecha_probable_parto: '',
                       });
                     }}
                   >
+                    {!TIPOS_EVENTO.some((t) => t.valor === nuevoEvento.tipo_evento) && (
+                      <option value={nuevoEvento.tipo_evento}>
+                        {nuevoEvento.tipo_evento}
+                      </option>
+                    )}
                     {TIPOS_EVENTO.map((t) => (
                       <option key={t.valor} value={t.valor}>
                         {t.etiqueta}
@@ -1813,7 +1818,7 @@ export default function App() {
                       })
                     }
                   >
-                    {RESULTADOS[nuevoEvento.tipo_evento].map((r) => (
+                    {obtenerResultados(nuevoEvento.tipo_evento).map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>

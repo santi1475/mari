@@ -106,6 +106,23 @@ export const RESULTADOS: Record<string, string[]> = {
   Referencia: ['REFERIDA', 'ATENDIDA', 'NO ACUDIÓ'],
 };
 
+// ponytail: Safe lookup for event results to prevent screen crashes when editing
+// legacy/imported event types like "Control 1". If we need to support distinct
+// result lists for numbered controls in the future, we should expand this mapping.
+export function obtenerResultados(tipo: string | null | undefined): string[] {
+  if (!tipo) return ['NORMAL', 'NEGATIVO', 'POSITIVO', 'NO ACUDIÓ'];
+  if (RESULTADOS[tipo]) return RESULTADOS[tipo];
+  
+  const t = tipo.toUpperCase();
+  if (t.includes('CONTROL')) return RESULTADOS.Control;
+  if (t.includes('COLPOSCOPIA') || t.includes('COLPOSCOPÍA')) return RESULTADOS.Colposcopia;
+  if (t.includes('BIOPSIA')) return RESULTADOS.Biopsia;
+  if (t.includes('MOLECULAR')) return RESULTADOS.Molecular;
+  if (t.includes('REFERENCIA')) return RESULTADOS.Referencia;
+  
+  return ['NORMAL', 'NEGATIVO', 'POSITIVO', 'NO ACUDIÓ'];
+}
+
 /** Consecuencia que el backend aplicará, mostrada antes de guardar para que no sorprenda. */
 export function consecuencia(tipo: string, resultado: string): string | null {
   const r = resultado.toUpperCase();
